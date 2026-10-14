@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Nahi mila — {{ store_name }}{% endblock %}
+{% block content %}
+<div class="form-card" style="text-align:center">
+  <div style="font-size:56px">🔍</div>
+  <h2>Page not found</h2>
+  <p style="color:var(--muted)">The link is wrong or the item was removed.</p><br>
+  <a class="btn" href="{{ url_for('index') }}">🏠 Back to Home</a>
+</div>
+{% endblock %}

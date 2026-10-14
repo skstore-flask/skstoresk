@@ -1,0 +1,76 @@
+{% extends "admin/base.html" %}
+{% set asec = "payments" %}
+{% block title %}Payment Methods — Admin{% endblock %}
+{% block content %}
+<h1 class="admin-h">💳 Payment Methods</h1>
+<div class="admin-sub">Advance payment options shown at checkout (Easypaisa / Bank Transfer). COD is always available and needs no setup. A method with empty account details stays hidden at checkout.</div>
+
+<div class="form-card" style="max-width:760px;margin:0 0 24px">
+  <h3>{{ '✏️ Edit payment method' if edit_method else '➕ New Payment Method' }}</h3><br>
+  {% set em = edit_method or {} %}
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="{{ 'edit' if edit_method else 'create' }}">
+    {% if edit_method %}<input type="hidden" name="method_id" value="{{ em.id }}">{% endif %}
+    <div class="field-row">
+      <div class="field"><label>Method Type *</label>
+        <select name="method_type" id="pm-type" onchange="toggleBankFields()">
+          <option value="bank" {% if (em.method_type or 'bank')=='bank' %}selected{% endif %}>🏦 Bank Transfer</option>
+          <option value="easypaisa" {% if em.method_type=='easypaisa' %}selected{% endif %}>📱 Easypaisa</option>
+        </select></div>
+      <div class="field"><label>Title *</label>
+        <input type="text" name="title" value="{{ em.title or '' }}" placeholder="e.g. Meezan Bank / Easypaisa" required></div>
+    </div>
+    <div class="field" id="bank-name-wrap"><label>Bank Name</label>
+      <input type="text" name="bank_name" value="{{ em.bank_name or '' }}" placeholder="e.g. Meezan Bank"></div>
+    <div class="field"><label>Account Number / Mobile Number *</label>
+      <input type="text" name="account_number" value="{{ em.account_number or '' }}" placeholder="Bank: 0101-1234567890 · Easypaisa: 0300-1234567" required></div>
+    <div class="field" id="iban-wrap"><label>IBAN * (bank transfer)</label>
+      <input type="text" name="iban" value="{{ em.iban or '' }}" placeholder="e.g. PK00MEZN0001011234567890" style="text-transform:uppercase"></div>
+    <div class="field-row">
+      <div class="field"><label>Sort order (smaller number = first)</label>
+        <input type="number" name="sort_order" min="0" value="{{ em.sort_order if em.sort_order is not none else 0 }}"></div>
+      <div class="field"><label>&nbsp;</label>
+        <label class="check-row"><input type="checkbox" name="is_active" {% if em.is_active is not false %}checked{% endif %}> Active (show at checkout)</label></div>
+    </div>
+    <button class="btn" type="submit">{{ '💾 Save' if edit_method else '➕ Add Payment Method' }}</button>
+    {% if edit_method %}<a class="btn btn-ghost" href="{{ url_for('admin_payment_methods') }}">❌ Cancel</a>{% endif %}
+  </form>
+</div>
+
+<div class="table-wrap">
+<table class="admin-table">
+  <tr><th>Method</th><th>Details</th><th>Active</th><th>Actions</th></tr>
+  {% for m in methods %}
+  <tr>
+    <td><b>{{ m.title }}</b><br><span style="color:var(--muted);font-size:12px">{{ '📱 Easypaisa' if m.method_type=='easypaisa' else '🏦 Bank Transfer' }}</span></td>
+    <td>{% if m.bank_name %}{{ m.bank_name }}<br>{% endif %}
+      A/C: {{ m.account_number or '— (hidden at checkout)' }}<br>
+      {% if m.method_type=='bank' %}IBAN: {{ m.iban or '—' }}{% endif %}</td>
+    <td>{{ '✅ Yes' if m.is_active else '❌ No' }}</td>
+    <td style="white-space:nowrap">
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('admin_payment_methods', edit=m.id) }}">✏️ Edit</a>
+      <form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="toggle"><input type="hidden" name="method_id" value="{{ m.id }}">
+        <button class="btn btn-ghost btn-sm" type="submit">{{ '⏸️ Deactivate' if m.is_active else '▶️ Activate' }}</button></form>
+      <form method="post" style="display:inline" onsubmit="return confirm('Delete this payment method?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="delete"><input type="hidden" name="method_id" value="{{ m.id }}">
+        <button class="btn btn-danger btn-sm" type="submit">🗑️ Delete</button></form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4">No payment methods yet. Add Easypaisa or a bank account above.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="hint" style="margin-top:14px">⚠️ <b>Verification is manual:</b> when a customer pays in advance, check the TID in your own Easypaisa / banking app, then press <b>Verify Payment</b> on the Orders page. Screenshots alone are never proof of payment.</div>
+
+<script>
+function toggleBankFields(){
+  var t = document.getElementById('pm-type').value;
+  document.getElementById('bank-name-wrap').style.display = (t==='bank') ? '' : 'none';
+  document.getElementById('iban-wrap').style.display = (t==='bank') ? '' : 'none';
+}
+toggleBankFields();
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "admin/base.html" %}
+{% set asec = "dash" %}
+{% block title %}Dashboard — Admin{% endblock %}
+{% block content %}
+<h1 class="admin-h">📊 Dashboard</h1>
+<div class="admin-sub">Welcome back! Here's today's store summary 👇</div>
+
+<div class="stat-grid">
+  <div class="stat"><div class="num">{{ products|length }}</div><div class="lbl">Products</div></div>
+  <div class="stat"><div class="num">{{ orders|length }}</div><div class="lbl">Total Orders</div></div>
+  <div class="stat"><div class="num">{{ pending|length }}</div><div class="lbl">Pending Orders</div></div>
+  <div class="stat"><div class="num">{{ format_price(revenue) }}</div><div class="lbl">Revenue (non-cancelled)</div></div>
+</div>
+
+{% if pending %}
+<div class="flash flash-error">⚠️ {{ pending|length }} orders pending — <a href="{{ url_for('admin_orders', status='Pending') }}">confirm in Orders</a>.</div>
+{% endif %}
+
+<h3 class="section-title">⏳ Latest Pending Orders</h3>
+{% if pending %}
+<div class="tbl-wrap"><table class="tbl">
+  <tr><th>Order</th><th>Customer</th><th>Total</th><th></th></tr>
+  {% for o in pending[:8] %}
+  <tr>
+    <td><b>{{ o.order_number }}</b><br><span style="color:var(--muted);font-size:12px">{{ (o.created_at or '')[:16].replace('T',' ') }}</span></td>
+    <td>{{ o.customer_name }}<br><span style="color:var(--muted);font-size:12px">{{ o.phone }}</span></td>
+    <td><b class="price">{{ format_price(o.total) }}</b></td>
+    <td><a class="btn btn-sm" href="{{ url_for('admin_orders', status='Pending') }}">Open</a></td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% else %}
+<div class="flash flash-info">No pending orders — all clear! 🎉</div>
+{% endif %}
+{% endblock %}

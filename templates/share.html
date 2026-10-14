@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ p.name }} — {{ store_name }}</title>
+<meta name="description" content="{{ (p.description or '')[:160] }}">
+<!-- Open Graph: Facebook/WhatsApp preview -->
+<meta property="og:type" content="product">
+<meta property="og:title" content="{{ p.name }} — {{ format_price(sale_price(p)) }}">
+<meta property="og:description" content="{{ (p.description or 'Cash on Delivery — Pakistan only.')[:200] }}">
+{% if p.images %}<meta property="og:image" content="{{ p.images[0] }}">{% endif %}
+{% if p.video_url %}
+<!-- Open Graph video: Facebook may show an inline player -->
+<meta property="og:video" content="{{ p.video_url }}">
+<meta property="og:video:url" content="{{ p.video_url }}">
+<meta property="og:video:secure_url" content="{{ p.video_url }}">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="720">
+<meta property="og:video:height" content="720">
+{% endif %}
+<meta property="og:url" content="{{ request.url }}">
+<meta property="product:price:amount" content="{{ sale_price(p) }}">
+<meta property="product:price:currency" content="PKR">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body style="background:#0c0c11;color:#f3f1ea;font-family:sans-serif">
+<div style="text-align:center;padding:80px 20px">
+  <div style="width:46px;height:46px;border:4px solid #2a2a36;border-top-color:#c9962e;border-radius:50%;margin:0 auto 18px;animation:sp 1s linear infinite"></div>
+  <style>@keyframes sp{to{transform:rotate(360deg)}}</style>
+  <h2>{{ p.name }}</h2>
+  <p>Opening the product page…</p>
+  <p><a href="{{ url_for('product_detail', pid=p.id, _external=True) }}" style="color:#f5c451">Click here if you are not redirected</a></p>
+</div>
+<script>window.location.href = {{ url_for('product_detail', pid=p.id)|tojson }};</script>
+</body>
+</html>

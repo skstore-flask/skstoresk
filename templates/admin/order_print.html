@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order {{ o.order_number }} — SK Store</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI",system-ui,sans-serif;color:#1a1a1a;background:#f5f2ea;padding:20px}
+.slip{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 2px 16px rgba(0,0,0,.08)}
+.hd{text-align:center;border-bottom:3px solid #b8860b;padding-bottom:16px;margin-bottom:20px}
+.hd h1{letter-spacing:3px;color:#b8860b;font-size:26px}
+.hd p{color:#666;font-size:13px;margin-top:4px}
+.meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+.meta div{font-size:14px}.meta b{color:#b8860b}
+.sec{margin-bottom:18px}.sec h3{font-size:14px;letter-spacing:1px;color:#b8860b;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:10px}
+.sec p{font-size:14px;line-height:1.7}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:#faf7ef;text-align:left;padding:10px;border-bottom:2px solid #b8860b;font-size:12px;letter-spacing:1px}
+td{padding:10px;border-bottom:1px solid #f0ece2}
+.num{text-align:right;white-space:nowrap}
+.totals{margin-top:6px;margin-left:auto;max-width:280px;font-size:14px}
+.totals .tr{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0ece2}
+.totals .gt{font-weight:800;font-size:17px;color:#b8860b;border-bottom:none}
+.stamp{display:inline-block;border:2px solid #16a34a;color:#16a34a;font-weight:800;padding:6px 18px;border-radius:8px;transform:rotate(-4deg);margin-top:14px;letter-spacing:2px}
+.foot{text-align:center;color:#888;font-size:12px;margin-top:24px;border-top:1px solid #eee;padding-top:14px}
+.bar{margin:20px 0;text-align:center}
+.bar button{background:linear-gradient(135deg,#d4a017,#b8860b);color:#fff;border:none;font-size:16px;font-weight:700;padding:14px 40px;border-radius:12px;cursor:pointer}
+.bar a{color:#666;font-size:14px;margin-left:16px}
+@media print{
+  body{background:#fff;padding:0}
+  .slip{box-shadow:none;border-radius:0;max-width:100%;padding:16px}
+  .bar{display:none}
+  .foot{margin-top:12px}
+}
+</style></head>
+<body>
+<div class="bar no-print">
+  <button onclick="window.print()">🖨️ Print Slip</button>
+  <a href="{{ url_for('admin_orders') }}">← Back to Orders</a>
+</div>
+<div id="pgStatus" style="display:none;max-width:700px;margin:0 auto 16px;background:#eef6ff;border:1px solid #bcd7f5;border-radius:8px;padding:10px 14px;font-size:13px"></div>
+<div class="slip">
+  <div class="hd">
+    <h1>SK STORE</h1>
+    <p>theskstorepk.com &nbsp;•&nbsp; Cash on Delivery across Pakistan</p>
+  </div>
+  <div class="meta">
+    <div><b>Order No:</b> {{ o.order_number }}</div>
+    <div><b>Date:</b> {{ (o.created_at or '')[:16].replace('T',' ') }}</div>
+    <div><b>Status:</b> {{ o.status }}</div>
+  </div>
+  <div class="sec">
+    <h3>👤 CUSTOMER DETAILS</h3>
+    <p>
+      <b>{{ o.customer_name }}</b><br>
+      📞 {{ o.phone }}<br>
+      {% if o.customer_email %}📧 {{ o.customer_email }}<br>{% endif %}
+      📍 {{ o.address }}, {{ o.city }}, {{ o.country }}
+    </p>
+  </div>
+  <div class="sec">
+    <h3>📦 ORDER ITEMS</h3>
+    <table>
+      <tr><th>#</th><th>Item</th><th>Variant</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr>
+      {% for it in o.get('items', []) or [] %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ it.name }}</td>
+        <td>{{ it.variant_label or '—' }}</td>
+        <td class="num">{{ it.qty }}</td>
+        <td class="num">Rs {{ '{:,.0f}'.format(it.price|float) }}</td>
+        <td class="num">Rs {{ '{:,.0f}'.format((it.price|float) * (it.qty|int)) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="totals">
+      <div class="tr"><span>Subtotal</span><span>Rs {{ '{:,.0f}'.format((o.subtotal or 0)|float) }}</span></div>
+      <div class="tr"><span>Delivery</span><span>Rs {{ '{:,.0f}'.format((o.delivery_fee or 0)|float) }}</span></div>
+      <div class="tr gt"><span>TOTAL (COD)</span><span>Rs {{ '{:,.0f}'.format((o.total or 0)|float) }}</span></div>
+    </div>
+  </div>
+  {% if o.tracking_id %}
+  <div class="sec"><h3>🚚 TRACKING</h3><p><b>{{ o.tracking_id }}</b></p></div>
+  {% endif %}
+  <div style="text-align:center"><span class="stamp">CASH ON DELIVERY</span></div>
+  <div class="foot">Thank you for shopping with SK Store! 💛 &nbsp;•&nbsp; Made with ❤ by Kaleem</div>
+</div>
+<script>
+if (new URLSearchParams(location.search).get('autoprint')==='1') window.print();
+// Print detection: browser print dialog band hone ke baad confirm karo
+// NOTE: browser security ki wajah se physical printer detect nahi ho sakta —
+// ye best possible hai: dialog band hone par user se confirm karwate hain.
+(function () {
+  var st = document.getElementById('pgStatus');
+  function show(msg, ok) {
+    st.style.display = 'block';
+    st.style.background = ok ? '#eefbf0' : '#eef6ff';
+    st.style.borderColor = ok ? '#b7e4c7' : '#bcd7f5';
+    st.innerHTML = msg;
+  }
+  window.addEventListener('beforeprint', function () { show('🖨️ Print dialog khula hai — printer select karke Print dabao…', false); });
+  window.addEventListener('afterprint', function () {
+    show('✅ Print dialog band ho gaya.<br><b>Kya slip sahi print hui?</b> &nbsp;<button onclick="this.parentElement.innerHTML=\'✅ Noted — printed!\'" style="background:#16a34a;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-weight:700;cursor:pointer">Han, ho gaya</button> &nbsp;<button onclick="window.print()" style="background:#b8860b;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-weight:700;cursor:pointer">Dobara print karo</button>', true);
+  });
+})();
+</script>
+</body></html>

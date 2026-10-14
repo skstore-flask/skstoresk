@@ -1,0 +1,32 @@
+{% extends "admin/base.html" %}
+{% set asec = "reviews" %}
+{% block title %}Reviews — Admin{% endblock %}
+{% block content %}
+<h1 class="admin-h">⭐ Customer Reviews</h1>
+<div class="admin-sub">Reviews appear on the site immediately. Hide or Delete an inappropriate review. Your reply is shown on the site and emailed to the customer.</div>
+
+{% if not reviews %}
+<div class="flash flash-info">No reviews yet.</div>
+{% endif %}
+
+{% for r in reviews %}
+<div class="review" style="margin-bottom:14px">
+  <span class="r-name">{{ r.name }}</span> <span class="stars">{{ '⭐'*(r.rating|int) }}</span>
+  {% if r.is_approved %}<span class="pill pill-green">🟢 Shown</span>{% else %}<span class="pill pill-red">🔴 Hidden</span>{% endif %}
+  <div style="color:var(--muted);font-size:13px">📦 {{ (r.products or {}).get('name','?') }} | 📧 {{ r.email or '—' }} | 📅 {{ (r.created_at or '')[:10] }}</div>
+  {% if r.comment %}<p style="margin:8px 0">{{ r.comment }}</p>{% endif %}
+  {% if r.reply_text %}<div class="reply-box"><b>💬 Your reply:</b> {{ r.reply_text }}</div>{% endif %}
+
+  <form method="post" style="margin-top:10px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="review_id" value="{{ r.id }}">
+    <div class="field"><label>💬 Reply</label>
+      <textarea name="reply_text" placeholder="Write your reply to the customer…" style="min-height:70px">{{ r.reply_text or '' }}</textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm" type="submit" name="action" value="reply">📧 Send Reply + Email</button>
+      <button class="btn btn-sm btn-ghost" type="submit" name="action" value="toggle">🔄 Show/Hide</button>
+      <button class="btn btn-sm btn-danger" type="submit" name="action" value="delete" onclick="return confirm('Delete this review?')">🗑️ Delete</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+{% endblock %}

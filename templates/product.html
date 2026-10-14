@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% set nav = "product" %}
+{% set sp = sale_price(p) %}{% set lp = p.price|float %}
+{% block title %}{{ p.name }} — {{ store_name }}{% endblock %}
+
+{% block content %}
+<div style="margin:18px 0"><a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">⬅ Back</a></div>
+
+<div class="pd">
+  <div>
+    {% set imgs = (p.images or [])[:6] %}
+    {% if imgs %}
+    <div data-gallery data-images='{{ imgs|tojson }}'>
+      <div class="gallery-main">
+        <img src="{{ imgs[0] }}" alt="{{ p.name }}">
+        {% if imgs|length > 1 %}
+        <button class="g-arrow g-prev" aria-label="previous">❮</button>
+        <button class="g-arrow g-next" aria-label="next">❯</button>
+        <div class="g-count">1 / {{ imgs|length }}</div>
+        {% endif %}
+      </div>
+      {% if imgs|length > 1 %}
+      <div class="g-thumbs">
+        {% for u in imgs %}<img src="{{ u }}" alt="thumbnail {{ loop.index }}" class="{% if loop.first %}on{% endif %}">{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if p.video_url or p.youtube_url %}
+    <div class="video-wrap">
+      <h3 class="section-title">🎬 Product Video</h3>
+      {% if p.video_url %}
+      <video src="{{ p.video_url }}" controls playsinline preload="metadata"></video>
+      {% elif youtube_id(p.youtube_url) %}
+      <iframe src="https://www.youtube.com/embed/{{ youtube_id(p.youtube_url) }}" frameborder="0" allowfullscreen></iframe>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="pd-info">
+    <h1>{{ p.name }}</h1>
+    {% if p.categories and p.categories.name %}<div style="color:var(--muted);font-size:14px">📁 {{ p.categories.name }}</div>{% endif %}
+    <div style="margin:8px 0">
+      {% if is_new(p.created_at, new_days) %}<span class="badge badge-new" style="position:static">NEW</span>{% endif %}
+      {% if sp < lp and lp > 0 %}<span class="badge badge-disc" style="position:static">-{{ ((1 - sp/lp)*100)|round|int }}% OFF</span>{% endif %}
+    </div>
+    <div>
+      <span class="price-big">{{ format_price(sp) }}</span>
+      {% if sp < lp %}<span class="price-old">{{ format_price(lp) }}</span>{% endif %}
+    </div>
+    <div style="margin:10px 0">
+      {% set stock = p.stock|int %}
+      {% if variants %}
+        {% set vstock = variants_json|sum(attribute='stock') %}
+        {% if vstock <= 0 %}<span class="out-stock">Out of Stock</span>
+        {% elif vstock <= 5 %}<span class="stock-low">⚡ Only {{ vstock }} left!</span>
+        {% else %}<span class="stock-ok">✅ In Stock</span>{% endif %}
+      {% elif stock <= 0 %}<span class="out-stock">Out of Stock</span>
+      {% elif stock <= 5 %}<span class="stock-low">⚡ Only {{ stock }} left!</span>
+      {% else %}<span class="stock-ok">✅ In Stock</span>{% endif %}
+      {% if (p.get('sold_count', 0)|int) > 0 %}<span class="sold-badge">🔥 {{ p.get('sold_count', 0)|int }} sold</span>{% endif %}
+    </div>
+
+    {% if variants %}
+    <div class="var-block" id="varBlock">
+      {% if colors %}
+      <div class="var-label">🎨 Color: <b id="varColorName">— select —</b></div>
+      <div class="swatches" id="varSwatches">
+        {% for c in colors %}<button type="button" class="swatch" data-color="{{ c }}" title="{{ c }}" aria-label="{{ c }}"><span></span></button>{% endfor %}
+      </div>
+      {% endif %}
+      {% if sizes %}
+      <div class="var-label">📏 {{ size_dim }}: <b id="varSizeName">— select —</b></div>
+      <div class="pills" id="varPills">
+        {% for s in sizes %}<button type="button" class="pill-btn" data-size="{{ s }}">{{ s }}</button>{% endfor %}
+      </div>
+      {% endif %}
+      <div class="var-hint" id="varHint">⚠️ Please select a color and size first</div>
+      <div id="varStockLine" style="margin-top:6px"></div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('cart_add', pid=p.id) }}" id="addForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('product_detail', pid=p.id) }}">
+      <input type="hidden" name="variant_id" id="variant_id" value="">
+      <div class="qty-row">
+        <label for="qty"><b>Quantity</b></label>
+        <input type="number" id="qty" name="qty" value="1" min="1" max="{{ stock if stock>0 else 1 }}">
+      </div>
+      <button class="btn btn-block" type="submit" id="addBtn"
+        {% if variants %}disabled style="opacity:.45"{% elif stock<=0 %}disabled style="opacity:.4"{% endif %}>🛒 Add to Cart</button>
+    </form>
+    <script>
+    (function () {
+      var VARIANTS = {{ variants_json|tojson }};
+      if (!VARIANTS.length) return;
+      var BASE_PRICE = {{ sp }};
+      var HEX = {Red:"#d23b3b",Blue:"#2f6fdb",Black:"#1c1c1c",White:"#f5f5f5",Green:"#2e9e5b",Yellow:"#f2c230",Pink:"#f28bb4",Brown:"#8a5a2b",Grey:"#8d8d8d",Navy:"#1f2a5a",Maroon:"#7a1f2b",Beige:"#e3d3b3"};
+      var selC = "", selS = "";
+      var hasC = document.getElementById("varSwatches"), hasS = document.getElementById("varPills");
+      var vidInput = document.getElementById("variant_id");
+      var addBtn = document.getElementById("addBtn");
+      var hint = document.getElementById("varHint");
+      var stockLine = document.getElementById("varStockLine");
+      var priceBig = document.querySelector(".price-big");
+      var qtyInput = document.getElementById("qty");
+      if (hasC) Array.prototype.forEach.call(hasC.querySelectorAll(".swatch"), function (b) {
+        var c = b.dataset.color;
+        b.querySelector("span").style.background = HEX[c] || "#ccc";
+        b.addEventListener("click", function () {
+          selC = c;
+          Array.prototype.forEach.call(hasC.querySelectorAll(".swatch"), function (x) { x.classList.toggle("on", x === b); });
+          document.getElementById("varColorName").textContent = c;
+          refresh();
+        });
+      });
+      if (hasS) Array.prototype.forEach.call(hasS.querySelectorAll(".pill-btn"), function (b) {
+        b.addEventListener("click", function () {
+          selS = b.dataset.size;
+          Array.prototype.forEach.call(hasS.querySelectorAll(".pill-btn"), function (x) { x.classList.toggle("on", x === b); });
+          document.getElementById("varSizeName").textContent = selS;
+          refresh();
+        });
+      });
+      function fmt(n) { return "Rs " + Math.round(n).toLocaleString("en-PK"); }
+      function refresh() {
+        var needC = !!hasC, needS = !!hasS;
+        if ((needC && !selC) || (needS && !selS)) {
+          vidInput.value = ""; addBtn.disabled = true; addBtn.style.opacity = ".45";
+          hint.style.display = ""; stockLine.innerHTML = "";
+          if (priceBig) priceBig.textContent = fmt(BASE_PRICE);
+          return;
+        }
+        var v = null;
+        for (var i = 0; i < VARIANTS.length; i++) {
+          var x = VARIANTS[i];
+          if ((!needC || x.color === selC) && (!needS || x.size === selS)) { v = x; break; }
+        }
+        if (!v || v.stock <= 0) {
+          vidInput.value = ""; addBtn.disabled = true; addBtn.style.opacity = ".45";
+          hint.style.display = "none";
+          stockLine.innerHTML = '<span class="out-stock">This combination is out of stock</span>';
+          return;
+        }
+        vidInput.value = v.id;
+        addBtn.disabled = false; addBtn.style.opacity = "1";
+        hint.style.display = "none";
+        if (priceBig) priceBig.textContent = fmt(v.price || BASE_PRICE);
+        qtyInput.max = v.stock;
+        if (parseInt(qtyInput.value, 10) > v.stock) qtyInput.value = v.stock;
+        stockLine.innerHTML = v.stock <= 5
+          ? '<span class="stock-low">⚡ Only ' + v.stock + " left!</span>"
+          : '<span class="stock-ok">✅ In Stock</span>';
+      }
+    })();
+    </script>
+    <div class="note-box">💵 <b>Cash on Delivery</b> — pay when your order arrives.</div>
+
+    {% for b in prod_banners %}
+    <div class="banner-card" style="margin-top:12px">
+      {% if b.image_url %}<div class="slide-bg" style="background-image:url('{{ b.image_url }}')"></div>{% endif %}
+      <div class="slide-veil"></div>
+      <div class="slide-body">
+        <div class="slide-title" style="font-size:22px;color:{{ b.title_color or '#1c1a15' }}">{{ b.title }}</div>
+        {% if b.subtitle %}<div class="slide-sub" style="font-size:14px;color:{{ b.subtitle_color or '#5b5346' }}">{{ b.subtitle }}</div>{% endif %}
+        {% if b.product_id %}<div><a class="btn btn-sm" href="{{ url_for('product_detail', pid=b.product_id) }}">Shop Now 🛍️</a></div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if p.description %}
+    <div class="desc"><b>📝 Description</b><br><br>{{ p.description }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if related %}
+<h2 class="section-title">🛍️ Related Products</h2>
+<div class="grid">
+  {% for rp in related %}
+  {% set rsp = sale_price(rp) %}{% set rlp = rp.price|float %}
+  <a class="card card-link reveal" href="{{ url_for('product_detail', pid=rp.id) }}">
+    <div class="card-img">
+      {% if rp.images %}<img src="{{ rp.images[0] }}" alt="{{ rp.name }}" loading="lazy">{% endif %}
+    </div>
+    <div class="card-body">
+      <div class="card-name">{{ rp.name }}</div>
+      <div><span class="price">{{ format_price(rsp) }}</span>{% if rsp < rlp %} <span class="price-old">{{ format_price(rlp) }}</span>{% endif %}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- REVIEWS -->
+<div class="reviews" id="reviews">
+  <h2 class="section-title">⭐ Customer Reviews</h2>
+  {% if reviews %}
+    <div class="rev-avg"><span class="stars">{{ '⭐'*(avg|round|int) }}{{ '☆'*(5-(avg|round|int)) }}</span> <b>{{ "%.1f"|format(avg) }}/5</b> ({{ reviews|length }} reviews)</div>
+    {% for r in reviews %}
+    <div class="review">
+      <span class="r-name">{{ r.name }}</span> <span class="stars">{{ '⭐'*(r.rating|int) }}</span>
+      {% if r.comment %}<p style="margin:8px 0">{{ r.comment }}</p>{% endif %}
+      {% if r.reply_text %}
+      <div class="reply-box"><b>🏪 Reply from SK Store:</b><br>{{ r.reply_text }}</div>
+      {% endif %}
+      <div class="r-date">📅 {{ (r.created_at or '')[:10] }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="flash flash-info">No reviews yet — be the first to write one!</div>
+  {% endif %}
+
+  <div class="form-card" style="margin-left:0">
+    <h3>✍️ Write your review</h3>
+    <form method="post" action="{{ url_for('post_review', pid=p.id) }}" data-needs-rating><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label>Your name *</label>
+        <input type="text" name="name" placeholder="e.g. Ahmed" required>
+      </div>
+      <div class="field">
+        <label>Email *</label>
+        <input type="email" name="email" placeholder="aap@example.com" required>
+        <div class="hint">📧 Our reply will be emailed to this address.</div>
+      </div>
+      <div class="field">
+        <label>Rating * — tap the stars</label>
+        <div class="star-input" data-target="rating_val">
+          <span data-v="5">★</span><span data-v="4">★</span><span data-v="3">★</span><span data-v="2">★</span><span data-v="1">★</span>
+        </div>
+        <input type="hidden" name="rating" id="rating_val" value="0">
+      </div>
+      <div class="field">
+        <label>Review</label>
+        <textarea name="comment" placeholder="How did you like the product? Share your honest opinion."></textarea>
+      </div>
+      <button class="btn btn-block" type="submit">✅ Post Review</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
