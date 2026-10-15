@@ -8,6 +8,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
                    request, session, url_for)
@@ -1029,6 +1030,56 @@ def create_app():
                 o["slip_url"] = storage.get_slip_url(o["payment_slip_path"])
         return render_template("admin/orders.html", orders=orders,
                                statuses=db.ORDER_STATUSES, fstatus=fstatus)
+
+    # ---- WhatsApp Confirm (V0) helpers ----
+    def wa_normalize_phone(raw):
+        """03xx... -> 92xx...; strips spaces, dashes, brackets, '+', leading 00."""
+        digits = re.sub(r"\D", "", raw or "")
+        if digits.startswith("00"):
+            digits = digits[2:]
+        if digits.startswith("0"):
+            digits = "92" + digits[1:]
+        return digits
+
+    def wa_order_message(o):
+        parts = []
+        for it in o.get("items") or []:
+            label = it.get("name") or "Item"
+            if it.get("variant_label"):
+                label += " (" + str(it["variant_label"]) + ")"
+            parts.append(f"{label} x {it.get('qty', 1)}")
+        items_txt = ", ".join(parts) if parts else "your order"
+        try:
+            total_txt = f"{float(o.get('total')):,.0f}"
+        except (TypeError, ValueError):
+            total_txt = str(o.get("total"))
+        return (f"Salam {o.get('customer_name') or 'Customer'}, SK Store — apka order "
+                f"{o.get('order_number')} ({items_txt}, total Rs {total_txt} incl. delivery) "
+                f"receive ho gaya hai. Confirm karne ke liye YES reply kar dein, "
+                f"cancel ke liye CANCEL likh dein. Shukriya!")
+
+    # ---- WhatsApp Confirm (V0): open customer chat with prefilled message ----
+    @app.route("/admin/orders/<oid>/whatsapp-confirm", methods=["POST"])
+    @admin_required
+    def admin_whatsapp_confirm(oid):
+        o = db.get_order(oid)
+        if not o:
+            flash("Order not found.", "error")
+            return redirect(url_for("admin_orders"))
+        wa = wa_normalize_phone(o.get("phone") or "")
+        if not re.fullmatch(r"923\d{9}", wa):
+            flash(f"Cannot open WhatsApp — order phone '{o.get('phone') or ''}' is not a valid Pakistani mobile number.", "error")
+            return redirect(url_for("admin_orders"))
+        msg = wa_order_message(o)
+        url = "https://wa.me/" + wa + "?text=" + quote(msg, safe="")
+        try:
+            if db.orders_whatsapp_column_ok():
+                db.update_order(oid, {"whatsapp_sent_at": datetime.now(timezone.utc).isoformat()})
+            else:
+                flash("⚠️ WhatsApp opened, but the sent time was NOT saved — run sql/migrations/007_whatsapp_sent_at.sql in Supabase first.", "error")
+        except Exception as e:
+            flash(f"WhatsApp opened, but stamping the sent time failed: {e}", "error")
+        return redirect(url)
 
     # ---- verify prepayment (admin checked TID in own banking app) ----
     @app.route("/admin/orders/<oid>/verify-payment", methods=["POST"])

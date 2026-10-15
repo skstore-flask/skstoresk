@@ -351,6 +351,18 @@ def delete_delivery_rate(rid: str):
     return client().table("delivery_rates").delete().eq("id", rid).execute()
 
 
+def orders_whatsapp_column_ok() -> bool:
+    """True when orders.whatsapp_sent_at exists (007 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("orders").select("whatsapp_sent_at").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 def products_weight_column_ok() -> bool:
     """True when products.weight_grams exists (006 migration ran)."""
     sb = client()
