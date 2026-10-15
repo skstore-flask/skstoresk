@@ -295,6 +295,74 @@ def delete_payment_method(mid: str):
     return client().table("payment_methods").delete().eq("id", mid).execute()
 
 
+# ---------------- delivery rates (city-wise, per 0.5kg slab) ----------------
+def delivery_rates_table_ok() -> bool:
+    """True when the delivery_rates table exists (006 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("delivery_rates").select("id").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+def get_delivery_rates(active_only=True):
+    sb = client()
+    if not sb:
+        return []
+    try:
+        q = sb.table("delivery_rates").select("*")
+        if active_only:
+            q = q.eq("is_active", True)
+        q = q.order("sort_order").order("city")
+        return _ok(q.execute())
+    except Exception:
+        return []
+
+
+def get_delivery_rate_for_city(city: str):
+    """Rate for a city (case-insensitive), or None when no active row."""
+    sb = client()
+    if not sb or not (city or "").strip():
+        return None
+    try:
+        rows = _ok(
+            sb.table("delivery_rates").select("rate")
+            .eq("is_active", True)
+            .ilike("city", (city or "").strip())
+            .limit(1).execute()
+        )
+        return float(rows[0]["rate"]) if rows else None
+    except Exception:
+        return None
+
+
+def create_delivery_rate(data: dict):
+    return client().table("delivery_rates").insert(data).execute()
+
+
+def update_delivery_rate(rid: str, data: dict):
+    return client().table("delivery_rates").update(data).eq("id", rid).execute()
+
+
+def delete_delivery_rate(rid: str):
+    return client().table("delivery_rates").delete().eq("id", rid).execute()
+
+
+def products_weight_column_ok() -> bool:
+    """True when products.weight_grams exists (006 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("products").select("weight_grams").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 # ---------------- orders ----------------
 ORDER_STATUSES = ["Pending", "Confirmed", "Shipped", "Delivered", "Cancelled"]
 

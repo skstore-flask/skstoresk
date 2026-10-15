@@ -29,6 +29,9 @@
     <div class="field-row">
       <div class="field"><label>Packing exp (Rs)</label>
         <input type="number" id="f_pexp" name="packing_expense" min="0" step="any" value="{{ p.packing_expense or 0 }}"></div>
+      <div class="field"><label>📦 Packed weight (grams) *</label>
+        <input type="number" name="weight_grams" min="0" step="1" value="{{ p.weight_grams if p.weight_grams is not none else 0 }}" required>
+        <div class="hint">Product + its packing, weighed once on a scale. Used for delivery fee.</div></div>
       <div class="field"><label>Stock *</label>
         <input type="number" name="stock" min="0" step="1" value="{{ p.stock if p.stock is not none else 0 }}" required></div>
       <div class="field"><label>🔥 Sold (display)</label>

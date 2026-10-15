@@ -43,13 +43,11 @@
 
   <div class="totals">
     <div class="row"><span>Subtotal</span><b>{{ format_price(subtotal) }}</b></div>
+    <div class="row"><span>📦 Parcel weight</span><b>{{ weight_grams }} g + packing</b></div>
     <div class="row"><span>Delivery</span>
-      <span style="text-align:right">
-      {% if fee == 0 %}<b style="color:var(--green)">FREE 🎉</b>
-      {% else %}<b>{{ format_price(fee) }}</b><br><span style="color:var(--muted);font-size:12px">(FREE on orders over {{ format_price(free_over) }})</span>{% endif %}
-      </span>
+      <span style="text-align:right">Calculated at checkout<br><span style="color:var(--muted);font-size:12px">(based on your city + parcel weight)</span></span>
     </div>
-    <div class="row grand"><span>Total</span><span>{{ format_price(subtotal + fee) }}</span></div>
+    <div class="row grand"><span>Total</span><span>{{ format_price(subtotal) }} + delivery</span></div>
   </div>
 
   <div style="display:flex;gap:12px;flex-wrap:wrap">

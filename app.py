@@ -155,6 +155,35 @@ def create_app():
             fee, free_over = 200.0, 5000.0
         return 0.0 if subtotal >= free_over else fee, fee, free_over
 
+    def delivery_fee_for_city(subtotal, city, weight_grams):
+        """City-wise delivery fee.
+
+        Returns (fee, free_applied, slabs, rate_used).
+        Rate = per 0.5kg slab for the city (fallback: default rate setting).
+        Parcel weight = product weights + packaging weight setting.
+        Free when subtotal >= free_delivery_over (same as before).
+        """
+        import math
+        try:
+            free_over = float(setting("free_delivery_over", "5000") or 5000)
+        except ValueError:
+            free_over = 5000.0
+        try:
+            packaging = int(float(setting("packaging_weight_grams", "100") or 100))
+        except ValueError:
+            packaging = 100
+        total_grams = max(0, int(weight_grams or 0)) + packaging
+        slabs = max(1, math.ceil(total_grams / 500))
+        rate = db.get_delivery_rate_for_city(city)
+        if rate is None:
+            try:
+                rate = float(setting("default_delivery_rate", "250") or 250)
+            except ValueError:
+                rate = 250.0
+        if subtotal >= free_over:
+            return 0.0, True, slabs, rate
+        return float(rate) * slabs, False, slabs, float(rate)
+
     # ================= PUBLIC =================
     @app.route("/")
     def index():
@@ -302,10 +331,14 @@ def create_app():
     def cart():
         items = cart_items()
         subtotal = sum(it["unit_price"] * it["qty"] for it in items)
-        fee, delivery_fee, free_over = delivery_fee_for(subtotal)
+        weight_grams = sum(
+            int((it["product"].get("weight_grams") or 0)) * it["qty"] for it in items
+        )
+        # Delivery is city-based: exact fee is shown at checkout once the
+        # customer picks a city. Cart shows subtotal + parcel weight only.
         return render_template("cart.html", items=items, subtotal=subtotal,
-                               fee=fee, delivery_fee=delivery_fee,
-                               free_over=free_over)
+                               fee=None, delivery_fee=None,
+                               free_over=None, weight_grams=weight_grams)
 
     @app.route("/cart/add/<pid>", methods=["POST"])
     def cart_add(pid):
@@ -417,7 +450,20 @@ def create_app():
                 "size_label": v.get("size_label"),
                 "price": price, "qty": qty,
                 "image": (p.get("images") or [None])[0]})
-        fee, _, _ = delivery_fee_for(subtotal)
+        # City-wise delivery fee: parcel weight + customer city decide the fee.
+        # fee_by_city drives the live JS update on the checkout page.
+        weight_grams = sum(
+            int((it["product"].get("weight_grams") or 0)) * it["qty"] for it in items
+        )
+        cities = db.get_delivery_rates(active_only=True)
+        default_city = cities[0]["city"] if cities else ""
+        fee_by_city = {}
+        for c in cities:
+            f, _, _, _ = delivery_fee_for_city(subtotal, c["city"], weight_grams)
+            fee_by_city[c["city"]] = f
+        def_fee, _, _, _ = delivery_fee_for_city(subtotal, None, weight_grams)
+        fee_by_city["__default__"] = def_fee
+        fee, _, _, _ = delivery_fee_for_city(subtotal, default_city, weight_grams)
         total = subtotal + fee
 
         # Prepay methods: active AND account details filled (empty = hidden).
@@ -432,8 +478,19 @@ def create_app():
             email = (request.form.get("email") or "").strip()
             phone = (request.form.get("phone") or "").strip()
             address = (request.form.get("address") or "").strip()
-            city = (request.form.get("city") or "").strip()
+            # City: dropdown (city_select) or "Other" + free text (city_other).
+            city_sel = (request.form.get("city_select") or "").strip()
+            city_other = (request.form.get("city_other") or "").strip()
+            if city_sel == "__other__":
+                city = city_other
+            elif city_sel:
+                city = city_sel
+            else:
+                city = (request.form.get("city") or "").strip()  # legacy fallback
             country = (request.form.get("country") or "Pakistan").strip()
+            # Recompute fee for the submitted city (server is the authority).
+            fee, _, _, _ = delivery_fee_for_city(subtotal, city, weight_grams)
+            total = subtotal + fee
             errors = []
             if not name:
                 errors.append("Name is required.")
@@ -450,7 +507,7 @@ def create_app():
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
                     fee=fee, total=total, errors=errors,
-                    intl_blocked=True, pay_methods=pay_methods,
+                    intl_blocked=True, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 ), 200
@@ -472,7 +529,7 @@ def create_app():
             if errors:
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
-                    fee=fee, total=total, errors=errors, pay_methods=pay_methods,
+                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
@@ -493,7 +550,7 @@ def create_app():
                     if errors:
                         return render_template(
                             "checkout.html", items=line_items, subtotal=subtotal,
-                            fee=fee, total=total, errors=errors, pay_methods=pay_methods,
+                            fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                             form={"name": name, "email": email, "phone": phone,
                                   "address": address, "city": city, "country": country},
                         )
@@ -504,7 +561,7 @@ def create_app():
                             "checkout.html", items=line_items, subtotal=subtotal,
                             fee=fee, total=total,
                             errors=[f"Payment slip upload failed: {e}"],
-                            pay_methods=pay_methods,
+                            pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                             form={"name": name, "email": email, "phone": phone,
                                   "address": address, "city": city, "country": country},
                         )
@@ -514,7 +571,7 @@ def create_app():
             if errors:
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
-                    fee=fee, total=total, errors=errors, pay_methods=pay_methods,
+                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
@@ -542,7 +599,7 @@ def create_app():
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
                     fee=fee, total=total, errors=[f"Order could not be saved. Please try again. ({e})"],
-                    pay_methods=pay_methods,
+                    pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
@@ -570,7 +627,7 @@ def create_app():
 
         return render_template("checkout.html", items=line_items,
                                subtotal=subtotal, fee=fee, total=total,
-                               errors=[], form={}, pay_methods=pay_methods)
+                               errors=[], form={}, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city)
 
     @app.route("/order/<order_number>")
     def order_success(order_number):
@@ -743,7 +800,9 @@ def create_app():
             packing_exp = float(request.form.get("packing_expense") or 0)
             stock = int(request.form.get("stock") or 0)
             sold_count = int(request.form.get("sold_count") or 0)
+            weight_grams = int(float(request.form.get("weight_grams") or 0))
             if sold_count < 0: sold_count = 0
+            if weight_grams < 0: weight_grams = 0
         except ValueError:
             flash("Please enter digits only in number fields.", "error")
             return render_template("admin/product_form.html", p={**ex, **request.form},
@@ -857,6 +916,10 @@ def create_app():
             "images": urls, "video_url": video_url, "youtube_url": yt_url,
             "stock": stock, "sold_count": sold_count, "is_active": is_active,
         }
+        # weight_grams only when the column exists (006 ran); otherwise the
+        # product still saves without it.
+        if db.products_weight_column_ok():
+            data["weight_grams"] = weight_grams
         try:
             if pid:
                 db.update_product(pid, data)
@@ -1170,6 +1233,85 @@ def create_app():
                         flash(f"Failed: {e}", "error")
             return redirect(url_for("admin_reviews"))
         return render_template("admin/reviews.html", reviews=reviews)
+
+    # ---- delivery rates (city-wise, per 0.5kg slab) ----
+    @app.route("/admin/delivery-rates", methods=["GET", "POST"])
+    @admin_required
+    def admin_delivery_rates():
+        if not db.delivery_rates_table_ok():
+            flash("Run sql/migrations/006_delivery_rates.sql in Supabase first "
+                  "(delivery_rates table missing).", "error")
+            return render_template("admin/delivery_rates.html", rates=[],
+                                   edit_rate=None, default_rate="250",
+                                   packaging_weight="100")
+        rates = db.get_delivery_rates(active_only=False)
+        if request.method == "POST":
+            action = request.form.get("action", "create")
+            if action == "settings":
+                dflt = (request.form.get("default_delivery_rate") or "").strip()
+                pack = (request.form.get("packaging_weight_grams") or "").strip()
+                try:
+                    if float(dflt) < 0 or int(float(pack)) < 0:
+                        raise ValueError
+                except ValueError:
+                    flash("Default rate and packaging weight must be 0 or more.", "error")
+                    return redirect(url_for("admin_delivery_rates"))
+                db.set_setting("default_delivery_rate", dflt)
+                db.set_setting("packaging_weight_grams", str(int(float(pack))))
+                flash("✅ Delivery settings saved!", "success")
+            elif action == "delete":
+                try:
+                    db.delete_delivery_rate(request.form.get("rate_id", ""))
+                    flash("Delivery rate deleted.", "success")
+                except Exception as e:
+                    flash(f"Delete failed: {e}", "error")
+            elif action == "toggle":
+                rid = request.form.get("rate_id", "")
+                r = next((x for x in rates if x["id"] == rid), None)
+                if r:
+                    try:
+                        db.update_delivery_rate(rid, {"is_active": not r.get("is_active")})
+                        flash("Delivery rate updated.", "success")
+                    except Exception as e:
+                        flash(f"Update failed: {e}", "error")
+            else:  # create / edit
+                city = (request.form.get("city") or "").strip()
+                errs = []
+                if not city:
+                    errs.append("City is required.")
+                try:
+                    rate = float(request.form.get("rate") or 0)
+                    if rate < 0:
+                        raise ValueError
+                except ValueError:
+                    errs.append("Rate must be 0 or more.")
+                    rate = 0
+                try:
+                    sort_order = int(request.form.get("sort_order") or 0)
+                except ValueError:
+                    sort_order = 0
+                if errs:
+                    for e in errs:
+                        flash(e, "error")
+                    return redirect(url_for("admin_delivery_rates"))
+                data = {"city": city, "rate": rate, "sort_order": sort_order,
+                        "is_active": bool(request.form.get("is_active"))}
+                try:
+                    if action == "edit":
+                        db.update_delivery_rate(request.form.get("rate_id", ""), data)
+                        flash("✅ Delivery rate updated!", "success")
+                    else:
+                        db.create_delivery_rate(data)
+                        flash("✅ Delivery rate added!", "success")
+                except Exception as e:
+                    flash(f"Could not save: {e} (same city twice?)", "error")
+            return redirect(url_for("admin_delivery_rates"))
+        edit_id = request.args.get("edit")
+        edit_rate = next((r for r in rates if r["id"] == edit_id), None) if edit_id else None
+        return render_template("admin/delivery_rates.html", rates=rates,
+                               edit_rate=edit_rate,
+                               default_rate=setting("default_delivery_rate", "250"),
+                               packaging_weight=setting("packaging_weight_grams", "100"))
 
     # ---- payment methods (prepayment: Easypaisa / Bank Transfer) ----
     @app.route("/admin/payment-methods", methods=["GET", "POST"])

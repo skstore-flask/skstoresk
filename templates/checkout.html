@@ -21,8 +21,9 @@
   {% for it in items %}
   <div class="row"><span>{{ it.name }}{% if it.variant_label %} <span class="var-tag">🎨 {{ it.variant_label }}</span>{% endif %} × {{ it.qty }}</span><b>{{ format_price(it.price * it.qty) }}</b></div>
   {% endfor %}
-  <div class="row"><span>Delivery</span><b>{{ format_price(fee) }}</b></div>
-  <div class="row grand"><span>Total</span><span>{{ format_price(total) }}</span></div>
+  <div class="row"><span>📦 Parcel weight</span><b id="summary-weight">{{ weight_grams }} g + packing</b></div>
+  <div class="row"><span>Delivery (<span id="summary-city">{{ form.city or (cities[0].city if cities else 'your city') }}</span>)</span><b id="summary-fee">{{ format_price(fee) }}</b></div>
+  <div class="row grand"><span>Total</span><span id="summary-total">{{ format_price(total) }}</span></div>
 </div>
 
 <div class="form-card">
@@ -38,7 +39,20 @@
       <textarea name="address" placeholder="House, street, area…" required>{{ form.address or '' }}</textarea></div>
     <div class="field-row">
       <div class="field"><label>City *</label>
-        <input type="text" name="city" value="{{ form.city or '' }}" required></div>
+        {% set city_names = cities | map(attribute='city') | list %}
+        {% set form_city = form.city or '' %}
+        <select name="city_select" id="city_select" onchange="cityPick()" required>
+          {% for c in cities %}
+          <option value="{{ c.city }}" {% if form_city==c.city %}selected{% endif %}>{{ c.city }} — {{ format_price(c.rate) }} / 0.5kg</option>
+          {% endfor %}
+          <option value="__other__" {% if form_city and form_city not in city_names %}selected{% endif %}>🏙️ Other City…</option>
+        </select>
+        <div id="city_other_wrap" style="display:none;margin-top:8px">
+          <input type="text" name="city_other" id="city_other" value="{% if form_city and form_city not in city_names %}{{ form_city }}{% endif %}" placeholder="Type your city name">
+          <div class="hint">Delivery for other cities is charged at the default rate.</div>
+        </div>
+        <div class="hint">🚚 Delivery charges depend on your city + parcel weight.</div>
+      </div>
       <div class="field"><label>Country *</label>
         <select name="country">
           {% for c in ["Pakistan","United Arab Emirates","Saudi Arabia","United Kingdom","United States","Canada","Australia","Qatar","Kuwait","Oman","Bahrain","Malaysia","Turkey","Other"] %}
@@ -76,6 +90,30 @@
   </form>
 </div>
 <script>
+var FEE_BY_CITY = {{ fee_by_city | tojson }};
+var SUBTOTAL = {{ subtotal }};
+function fmtRs(v){ return 'Rs ' + Math.round(v).toLocaleString('en-PK'); }
+function cityPick(){
+  var sel = document.getElementById('city_select');
+  var other = document.getElementById('city_other_wrap');
+  var otherInput = document.getElementById('city_other');
+  var city = sel.value;
+  if(city === '__other__'){
+    other.style.display = 'block';
+    otherInput.required = true;
+    city = otherInput.value.trim() || '__default__';
+    document.getElementById('summary-city').textContent = otherInput.value.trim() || 'your city';
+  } else {
+    other.style.display = 'none';
+    otherInput.required = false;
+    document.getElementById('summary-city').textContent = city;
+  }
+  var fee = FEE_BY_CITY.hasOwnProperty(city) ? FEE_BY_CITY[city] : FEE_BY_CITY['__default__'];
+  document.getElementById('summary-fee').textContent = fmtRs(fee);
+  document.getElementById('summary-total').textContent = fmtRs(SUBTOTAL + fee);
+}
+document.getElementById('city_other').addEventListener('input', cityPick);
+cityPick();
 function payPick(id){
   document.querySelectorAll('.pay-details').forEach(function(d){ d.style.display = 'none'; });
   var pre = document.getElementById('prepay-fields');
