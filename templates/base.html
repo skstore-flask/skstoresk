@@ -40,11 +40,15 @@
   <div class="f-brand">SK STORE</div>
   {% if footer_email %}<div class="f-mail">📧 {{ footer_email }}</div>{% endif %}
   <div>Cash on Delivery &nbsp;•&nbsp; Pakistan delivery only</div>
+  {% if facebook_url %}<div class="f-social"><a href="{{ facebook_url }}" target="_blank" rel="noopener">📘 Follow us on Facebook</a></div>{% endif %}
   <div style="margin-top:8px">Made with ❤️ &nbsp;|&nbsp; © Kaleem</div>
 </footer>
 
 {% if whatsapp_number %}
 <a class="wa-float" href="https://wa.me/{{ whatsapp_number }}?text={{ 'Hello! I need information about SK Store.' | urlencode }}" target="_blank" rel="noopener" aria-label="WhatsApp">💬</a>
+{% endif %}
+{% if facebook_url %}
+<a class="fb-float" href="{{ facebook_url }}" target="_blank" rel="noopener" aria-label="Facebook">f</a>
 {% endif %}
 
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>

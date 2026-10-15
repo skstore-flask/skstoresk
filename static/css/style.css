@@ -274,6 +274,14 @@ img { max-width: 100%; }
   background: #25d366; display: flex; align-items: center; justify-content: center; font-size: 30px;
   box-shadow: 0 8px 24px rgba(37,211,102,.45); transition: transform .2s; }
 .wa-float:hover { transform: scale(1.12); }
+.fb-float { position: fixed; right: 18px; bottom: 88px; z-index: 200; width: 58px; height: 58px; border-radius: 50%;
+  background: #1877f2; display: flex; align-items: center; justify-content: center; color: #fff;
+  font-size: 34px; font-weight: 800; line-height: 1; text-decoration: none;
+  box-shadow: 0 8px 24px rgba(24,119,242,.45); transition: transform .2s; }
+.fb-float:hover { transform: scale(1.12); }
+.f-social { margin-top: 8px; }
+.f-social a { color: #1877f2; font-weight: 600; text-decoration: none; }
+.f-social a:hover { text-decoration: underline; }
 
 /* ---------- admin ---------- */
 .admin-layout { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
@@ -403,6 +411,12 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 
 
 /* ---- Admin: IDM-style upload progress ---- */
 .upload-progress { background: var(--surface); border: 1.5px solid var(--gold); border-radius: 12px; padding: 16px; margin: 14px 0; }
+/* ---- instant pre-upload rows (product form, on file select) ---- */
+.pre-row { margin: 8px 0; font-size: 13px; }
+.pre-row-name { font-weight: 600; word-break: break-all; }
+.pre-row-meta { color: var(--muted); margin-top: 2px; }
+.pre-row.done .pre-row-meta { color: #2e7d5b; font-weight: 600; }
+.pre-row.fail .pre-row-meta { color: #b3261e; font-weight: 600; }
 .up-head { font-weight: 800; margin-bottom: 10px; }
 .up-bar { height: 26px; background: var(--border); border-radius: 999px; overflow: hidden; }
 .up-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #4caf7d, #2e7d5b); border-radius: 999px; transition: width .15s; }

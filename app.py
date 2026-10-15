@@ -79,9 +79,17 @@ def create_app():
         wa = re.sub(r"\D", "", wa)
         if wa.startswith("0"):
             wa = "92" + wa[1:]
+        fb = ""
+        try:
+            fb = (db.get_setting("facebook_url", "") or "").strip()
+        except Exception:
+            fb = ""
+        if fb and not fb.startswith(("http://", "https://")):
+            fb = "https://" + fb
         return {
             "cart_count": sum(int(q) for q in cart.values()),
             "whatsapp_number": wa,
+            "facebook_url": fb,
             "supabase_ok": config.supabase_configured(),
             "footer_email": config.GMAIL_USER or "",
         }
@@ -806,6 +814,14 @@ def create_app():
         vchoice = request.form.get("video_choice") or "none"
         youtube_link = (request.form.get("youtube_url") or "").strip()
         keep_images = request.form.getlist("keep_images")
+        try:
+            pre_urls = json.loads(request.form.get("uploaded_images_json") or "[]")
+            if not isinstance(pre_urls, list):
+                pre_urls = []
+            pre_urls = [str(u).strip() for u in pre_urls if str(u).strip()]
+        except Exception:
+            pre_urls = []
+        pre_video_url = (request.form.get("uploaded_video_url") or "").strip()
 
         errs = []
         if not name:
@@ -825,7 +841,7 @@ def create_app():
             errs.append("Please enter the new category name.")
         new_files = [f for f in request.files.getlist("images")
                      if f and f.filename]
-        total_imgs = len(keep_images) + len(new_files)
+        total_imgs = len(keep_images) + len(pre_urls) + len(new_files)
         if total_imgs < 2:
             errs.append(f"Minimum 2 images required (currently {total_imgs}).")
         if total_imgs > 6:
@@ -855,8 +871,8 @@ def create_app():
             return render_template("admin/product_form.html", p={**ex, **request.form},
                                    cats=cats, is_new=(pid is None))
 
-        # uploads
-        urls = list(keep_images)
+        # uploads (pre-uploaded URLs from file-select + Save-time fallback files)
+        urls = list(keep_images) + pre_urls
         for f in new_files:
             try:
                 urls.append(storage.upload_image(f))
@@ -867,6 +883,9 @@ def create_app():
         video_url, yt_url = ex.get("video_url"), ex.get("youtube_url")
         if vchoice == "upload":
             vf = request.files.get("video_file")
+            if pre_video_url and not (vf and vf.filename):
+                video_url = pre_video_url
+                yt_url = None
             if vf and vf.filename:
                 ext = (vf.filename.rsplit(".", 1)[-1].lower()
                        if "." in vf.filename else "")
@@ -1390,6 +1409,7 @@ def create_app():
             ffree = (request.form.get("free_delivery_over") or "").strip()
             ndays = (request.form.get("new_badge_days") or "").strip()
             wa = (request.form.get("whatsapp_number") or "").strip()
+            fb = (request.form.get("facebook_url") or "").strip()
             cod = (request.form.get("cod_fee_pct") or "").strip()
             try:
                 float(dfee); float(ffree); int(ndays); float(cod)
@@ -1403,6 +1423,7 @@ def create_app():
                 db.set_setting("free_delivery_over", ffree)
                 db.set_setting("new_badge_days", ndays)
                 db.set_setting("whatsapp_number", wa)
+                db.set_setting("facebook_url", fb)
                 db.set_setting("cod_fee_pct", cod)
                 flash("✅ Settings saved!", "success")
             except Exception as e:
@@ -1414,8 +1435,23 @@ def create_app():
             free_delivery_over=setting("free_delivery_over", "5000"),
             new_badge_days=setting("new_badge_days", "7"),
             whatsapp_number=setting("whatsapp_number", ""),
+            facebook_url=setting("facebook_url", ""),
             cod_fee_pct=setting("cod_fee_pct", "4"),
         )
+
+    # ---- instant media upload (product form: upload on file select) ----
+    @app.route("/admin/upload-media", methods=["POST"])
+    @admin_required
+    def admin_upload_media():
+        f = request.files.get("file")
+        kind = (request.form.get("kind") or "image").strip()
+        if not f or not f.filename:
+            return jsonify({"ok": False, "error": "No file received."}), 400
+        try:
+            url = storage.upload_video(f) if kind == "video" else storage.upload_image(f)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, "url": url})
 
     # ---- system check ----
     @app.route("/admin/system")

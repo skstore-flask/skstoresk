@@ -65,8 +65,11 @@
         {% endfor %}
       </div>
       {% endif %}
-      <input type="file" name="images" accept=".jpg,.jpeg,.png,.webp" multiple>
+      <input type="file" name="images" id="images_input" accept=".jpg,.jpeg,.png,.webp" multiple>
       <div class="hint">⚠️ Not for video — use the 'Product Video' section below. Only jpg/png/webp.</div>
+      <div id="img_pre_progress"></div>
+      <div id="uploaded_thumbs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+      <input type="hidden" name="uploaded_images_json" id="uploaded_images_json" value="">
     </div>
 
     <div class="field"><label><b>Product Video (optional)</b></label>
@@ -78,7 +81,9 @@
         <label><input type="radio" name="video_choice" value="youtube" {% if has_yt and not has_vid %}checked{% endif %}> YouTube link</label>
       </div>
       <div id="video_upload_wrap">
-        <input type="file" name="video_file" accept=".mp4,.webm,.mov,.m4v">
+        <input type="file" name="video_file" id="video_input" accept=".mp4,.webm,.mov,.m4v">
+        <div id="vid_pre_progress"></div>
+        <input type="hidden" name="uploaded_video_url" id="uploaded_video_url" value="">
         <div class="hint">MP4 ✅ recommended — small size, works in every browser. For large videos (&gt;25MB), a YouTube link is better (Supabase free storage is 1GB).</div>
         {% if has_vid %}<div class="hint">A video is already attached — uploading a new one will replace it.</div>{% endif %}
       </div>
@@ -353,6 +358,151 @@
     notice.innerHTML = "💡 Is product me <b>" + EXISTING.length + " variants</b> hain — stock edit karo ya naye age/color add karo, phir Save dabao.";
   } else {
     renderCombos(); // empty hint
+  }
+})();
+</script>
+
+{# ---- Instant upload on file select: progress shows the moment files are picked ---- #}
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("product-form");
+  if (!form || !window.XMLHttpRequest || !window.FormData) return;
+  var csrf = (form.querySelector('input[name="csrf_token"]') || {}).value || "";
+  var imgInput = document.getElementById("images_input");
+  var vidInput = document.getElementById("video_input");
+  var imgProg = document.getElementById("img_pre_progress");
+  var vidProg = document.getElementById("vid_pre_progress");
+  var thumbs = document.getElementById("uploaded_thumbs");
+  var imgHidden = document.getElementById("uploaded_images_json");
+  var vidHidden = document.getElementById("uploaded_video_url");
+  var uploadedNames = {};   // filename -> true (skip re-upload of an already-uploaded file)
+  var uploadedUrls = [];    // mirrors imgHidden
+  var pendingFailed = [];   // filenames that failed pre-upload and still sit in the input
+
+  function fmtMB(b) { return (b / 1048576).toFixed(1) + " MB"; }
+  function fmtSpeed(bps) {
+    if (bps <= 0) return "—";
+    if (bps >= 1048576) return (bps / 1048576).toFixed(1) + " MB/s";
+    return Math.round(bps / 1024) + " KB/s";
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+  function makeRow(container, name) {
+    var row = document.createElement("div");
+    row.className = "pre-row";
+    row.innerHTML = '<div class="pre-row-name">' + esc(name) + '</div>' +
+      '<div class="up-bar"><div class="up-fill" style="width:0%"></div></div>' +
+      '<div class="pre-row-meta"><span class="pre-row-pct">0%</span> · <span class="pre-row-mb">0.0 MB</span> · <span class="pre-row-speed">—</span></div>';
+    container.appendChild(row);
+    return row;
+  }
+  function noteRow(container, text) {
+    var row = document.createElement("div");
+    row.className = "pre-row fail";
+    row.innerHTML = '<div class="pre-row-meta">' + esc(text) + '</div>';
+    container.appendChild(row);
+  }
+
+  function uploadOne(file, kind, row) {
+    return new Promise(function (resolve) {
+      var fill = row.querySelector(".up-fill");
+      var pctEl = row.querySelector(".pre-row-pct");
+      var mbEl = row.querySelector(".pre-row-mb");
+      var spEl = row.querySelector(".pre-row-speed");
+      var meta = row.querySelector(".pre-row-meta");
+      var fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", kind);
+      fd.append("csrf_token", csrf);
+      var xhr = new XMLHttpRequest();
+      var start = Date.now();
+      xhr.open("POST", "/admin/upload-media", true);
+      xhr.upload.onprogress = function (ev) {
+        if (!ev.lengthComputable) return;
+        var pct = Math.round((ev.loaded / ev.total) * 100);
+        fill.style.width = pct + "%";
+        pctEl.textContent = pct + "%";
+        mbEl.textContent = fmtMB(ev.loaded) + " / " + fmtMB(ev.total);
+        var secs = (Date.now() - start) / 1000;
+        spEl.textContent = secs > 0 ? fmtSpeed(ev.loaded / secs) : "—";
+      };
+      xhr.onload = function () {
+        var ok = false, url = "", err = "";
+        try { var res = JSON.parse(xhr.responseText || "{}"); ok = !!res.ok; url = res.url || ""; err = res.error || ""; } catch (e) { err = "Bad server response"; }
+        if (xhr.status >= 200 && xhr.status < 300 && ok && url) {
+          fill.style.width = "100%";
+          pctEl.textContent = "100%";
+          row.classList.add("done");
+          meta.textContent = "✅ Uploaded — will attach on Save";
+          resolve(url);
+        } else {
+          row.classList.add("fail");
+          meta.textContent = "❌ Upload failed: " + (err || ("HTTP " + xhr.status)) + " — will retry on Save";
+          resolve(null);
+        }
+      };
+      xhr.onerror = function () {
+        row.classList.add("fail");
+        meta.textContent = "❌ Network error — will retry on Save";
+        resolve(null);
+      };
+      xhr.send(fd);
+    });
+  }
+
+  if (imgInput) {
+    imgInput.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(imgInput.files || []);
+      if (!files.length) return;
+      if (pendingFailed.length) {
+        noteRow(imgProg, "⚠️ Note: previously failed file(s) left the selection when you picked new files — please re-select: " + pendingFailed.join(", "));
+        pendingFailed = [];
+      }
+      var fresh = files.filter(function (f) { return !uploadedNames[f.name]; });
+      if (!fresh.length) { imgInput.value = ""; return; }
+      var jobs = fresh.map(function (f) {
+        var row = makeRow(imgProg, f.name);
+        return uploadOne(f, "image", row).then(function (url) { return { file: f, url: url }; });
+      });
+      Promise.all(jobs).then(function (results) {
+        var failed = results.filter(function (r) { return !r.url; });
+        var allOk = !failed.length;
+        if (allOk) {
+          results.forEach(function (r) {
+            uploadedNames[r.file.name] = true;
+            uploadedUrls.push(r.url);
+            var im = document.createElement("img");
+            im.src = r.url;
+            im.alt = r.file.name;
+            im.style.cssText = "width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #ddd";
+            thumbs.appendChild(im);
+          });
+          imgHidden.value = JSON.stringify(uploadedUrls);
+          imgInput.value = ""; // all uploaded — Save will NOT upload them again
+        } else {
+          // Any failure: leave the input untouched — Save uploads the whole batch again.
+          pendingFailed = failed.map(function (r) { return r.file.name; });
+        }
+      });
+    });
+  }
+
+  if (vidInput) {
+    vidInput.addEventListener("change", function () {
+      var choice = (form.querySelector('input[name="video_choice"]:checked') || {}).value || "";
+      var files = vidInput.files || [];
+      if (!files.length || choice !== "upload") return;
+      var f = files[0];
+      var row = makeRow(vidProg, f.name);
+      uploadOne(f, "video", row).then(function (url) {
+        if (url) {
+          vidHidden.value = url;
+          vidInput.value = ""; // uploaded — Save will NOT upload it again
+        }
+        // On failure the input keeps the file — Save uploads it.
+      });
+    });
   }
 })();
 </script>
