@@ -1,0 +1,70 @@
+{% extends "admin/base.html" %}
+{% set asec = "delivery" %}
+{% block title %}Delivery Rates — Admin{% endblock %}
+{% block content %}
+<h1 class="admin-h">🚚 Delivery Rates</h1>
+<div class="admin-sub">City-wise delivery rates, charged per 0.5kg slab. Parcel weight = sum of product packed weights + packaging weight. Free delivery still applies above the threshold in Settings.</div>
+
+<div class="form-card" style="max-width:760px;margin:0 0 24px">
+  <h3>⚙️ Default Settings</h3><br>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="settings">
+    <div class="field-row">
+      <div class="field"><label>Default rate (Rs / 0.5kg) — cities not listed below</label>
+        <input type="number" name="default_delivery_rate" min="0" step="any" value="{{ default_rate }}" required></div>
+      <div class="field"><label>Packaging weight (grams) — box/packing per parcel</label>
+        <input type="number" name="packaging_weight_grams" min="0" step="1" value="{{ packaging_weight }}" required></div>
+    </div>
+    <button class="btn" type="submit">💾 Save Settings</button>
+  </form>
+</div>
+
+<div class="form-card" style="max-width:760px;margin:0 0 24px">
+  <h3>{{ '✏️ Edit rate' if edit_rate else '➕ New City Rate' }}</h3><br>
+  {% set er = edit_rate or {} %}
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="{{ 'edit' if edit_rate else 'create' }}">
+    {% if edit_rate %}<input type="hidden" name="rate_id" value="{{ er.id }}">{% endif %}
+    <div class="field-row">
+      <div class="field"><label>City *</label>
+        <input type="text" name="city" value="{{ er.city or '' }}" placeholder="e.g. Lahore" required></div>
+      <div class="field"><label>Rate (Rs) per 0.5kg *</label>
+        <input type="number" name="rate" min="0" step="any" value="{{ er.rate if er.rate is not none else '' }}" placeholder="e.g. 200" required></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Sort order (smaller number = first)</label>
+        <input type="number" name="sort_order" min="0" value="{{ er.sort_order if er.sort_order is not none else 0 }}"></div>
+      <div class="field"><label>&nbsp;</label>
+        <label class="check-row"><input type="checkbox" name="is_active" {% if er.is_active is not false %}checked{% endif %}> Active</label></div>
+    </div>
+    <button class="btn" type="submit">{{ '💾 Save' if edit_rate else '➕ Add Rate' }}</button>
+    {% if edit_rate %}<a class="btn btn-ghost" href="{{ url_for('admin_delivery_rates') }}">❌ Cancel</a>{% endif %}
+  </form>
+</div>
+
+<div class="table-wrap">
+<table class="admin-table">
+  <tr><th>City</th><th>Rate / 0.5kg</th><th>Active</th><th>Actions</th></tr>
+  {% for r in rates %}
+  <tr>
+    <td><b>{{ r.city }}</b></td>
+    <td>Rs {{ r.rate }}</td>
+    <td>{{ '✅ Yes' if r.is_active else '❌ No' }}</td>
+    <td style="white-space:nowrap">
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('admin_delivery_rates', edit=r.id) }}">✏️ Edit</a>
+      <form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="toggle"><input type="hidden" name="rate_id" value="{{ r.id }}">
+        <button class="btn btn-ghost btn-sm" type="submit">{{ '⏸️ Deactivate' if r.is_active else '▶️ Activate' }}</button></form>
+      <form method="post" style="display:inline" onsubmit="return confirm('Delete this delivery rate?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="delete"><input type="hidden" name="rate_id" value="{{ r.id }}">
+        <button class="btn btn-danger btn-sm" type="submit">🗑️ Delete</button></form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4">No city rates yet. Add cities above, or customers pay the default rate.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="hint" style="margin-top:14px">💡 <b>Example:</b> Karachi rate Rs 450, parcel 600g + 100g packing = 700g → 2 slabs → delivery Rs 900. Rates yahan tumhare Leopards <b>account</b> wale hone chahiye — public calculator wale nahi.</div>
+{% endblock %}

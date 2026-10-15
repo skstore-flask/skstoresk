@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% set nav = "home" %}
+
+{% macro banner_card(b) %}
+<div class="banner-card reveal">
+  {% if b.image_url %}<div class="slide-bg" style="background-image:url('{{ b.image_url }}')"></div>{% endif %}
+  <div class="slide-veil"></div>
+  <div class="slide-body">
+    <span class="kicker">{% if b.banner_type=='new' %}🆕 New{% elif b.banner_type=='discount' %}🔥 Discount{% else %}📢 Announcement{% endif %}</span>
+    <div class="slide-title" style="color:{{ b.title_color or '#1c1a15' }}">{{ b.title }}</div>
+    {% if b.subtitle %}<div class="slide-sub" style="color:{{ b.subtitle_color or '#5b5346' }}">{{ b.subtitle }}</div>{% endif %}
+    {% if b.product_id %}<div><a class="btn btn-sm" href="{{ url_for('product_detail', pid=b.product_id) }}">Shop Now 🛍️</a></div>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro product_card(p) %}
+{% set sp = sale_price(p) %}{% set lp = p.price|float %}
+<a class="card card-link reveal" href="{{ url_for('product_detail', pid=p.id) }}">
+  {% if is_new(p.created_at, new_days) %}<span class="badge badge-new">NEW</span>{% endif %}
+  {% if sp < lp and lp > 0 %}<span class="badge badge-disc">-{{ ((1 - sp/lp)*100)|round|int }}%</span>{% endif %}
+  <div class="card-img">
+    {% if p.images %}<img src="{{ p.images[0] }}" alt="{{ p.name }}" loading="lazy">{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="card-name">{{ p.name }}</div>
+    <div>
+      <span class="price">{{ format_price(sp) }}</span>
+      {% if sp < lp %}<span class="price-old">{{ format_price(lp) }}</span>{% endif %}
+    </div>
+    {% if (p.stock|int) <= 0 %}
+      <div class="out-stock">Out of Stock</div>
+    {% endif %}
+    {% if (p.get('sold_count', 0)|int) > 0 %}
+      <div class="card-sold">🔥 {{ p.get('sold_count', 0)|int }} sold</div>
+    {% endif %}
+  </div>
+</a>
+{% endmacro %}
+
+{% block content %}
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-logo-spin"><img class="hero-logo" src="{{ url_for('static', filename='img/sk-logo.png') }}" alt="SK Store"></div>
+  <h1 class="hero-title">SK STORE</h1>
+  <p class="hero-tag">Pakistan's own online shop — <b>Cash on Delivery</b> 🛍️</p>
+</section>
+
+<!-- TOP BANNERS: 5s carousel -->
+{% if banners_top %}
+<div class="banners">
+  {% if banners_top|length > 1 %}
+  <div class="carousel">
+    {% for b in banners_top %}
+    <div class="slide">
+      {% if b.image_url %}<div class="slide-bg" style="background-image:url('{{ b.image_url }}')"></div>{% endif %}
+      <div class="slide-veil"></div>
+      <div class="slide-body">
+        <span class="kicker">{% if b.banner_type=='new' %}🆕 New{% elif b.banner_type=='discount' %}🔥 Discount{% else %}📢 Announcement{% endif %}</span>
+        <div class="slide-title" style="color:{{ b.title_color or '#1c1a15' }}">{{ b.title }}</div>
+        {% if b.subtitle %}<div class="slide-sub" style="color:{{ b.subtitle_color or '#5b5346' }}">{{ b.subtitle }}</div>{% endif %}
+        {% if b.product_id %}<div><a class="btn" href="{{ url_for('product_detail', pid=b.product_id) }}">Shop Now 🛍️</a></div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    <div class="dots"></div>
+  </div>
+  {% else %}
+    {{ banner_card(banners_top[0]) }}
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- SEARCH + CATEGORY -->
+<form class="toolbar" method="get" action="{{ url_for('index') }}">
+  <input type="text" name="q" value="{{ q }}" placeholder="🔍 Search products…">
+  <select name="cat" onchange="this.form.submit()">
+    <option value="">All categories</option>
+    {% for c in cats %}
+    <option value="{{ c.id }}" {% if cat_id==c.id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-sm" type="submit">Search</button>
+</form>
+
+{% if not filtering %}
+  {% if new_items %}
+  <h2 class="section-title">🆕 New Arrivals</h2>
+  <div class="grid">{% for p in new_items %}{{ product_card(p) }}{% endfor %}</div>
+  {% endif %}
+
+  {% if disc_items %}
+  <h2 class="section-title">🔥 On Discount</h2>
+  <div class="grid">{% for p in disc_items %}{{ product_card(p) }}{% endfor %}</div>
+  {% endif %}
+
+  {% if banners_mid %}
+  <div class="banners banner-stack">{% for b in banners_mid %}{{ banner_card(b) }}{% endfor %}</div>
+  {% endif %}
+
+  <h2 class="section-title">🛒 All Products</h2>
+{% else %}
+  <h2 class="section-title">🔍 Search Results ({{ products|length }})</h2>
+{% endif %}
+
+{% if products %}
+<div class="grid">{% for p in products %}{{ product_card(p) }}{% endfor %}</div>
+{% else %}
+<div class="flash flash-info">No products found. 🔍</div>
+{% endif %}
+
+{% if banners_bot %}
+<div class="banners banner-stack" style="margin-top:26px">{% for b in banners_bot %}{{ banner_card(b) }}{% endfor %}</div>
+{% endif %}
+{% endblock %}

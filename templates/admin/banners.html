@@ -1,0 +1,84 @@
+{% extends "admin/base.html" %}
+{% set asec = "banners" %}
+{% block title %}Banners — Admin{% endblock %}
+{% block content %}
+<h1 class="admin-h">🖼️ Banners</h1>
+<div class="admin-sub">4 placements available: Top, Middle, Bottom, Product page</div>
+
+<div class="form-card" style="max-width:760px;margin:0 0 24px">
+  <h3>{{ '✏️ Edit banner' if edit_banner else '➕ New Banner' }}</h3><br>
+  {% set eb = edit_banner or {} %}
+  <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="{{ 'edit' if edit_banner else 'create' }}">
+    {% if edit_banner %}<input type="hidden" name="banner_id" value="{{ eb.id }}">{% endif %}
+    <div class="field-row">
+      <div class="field"><label>Banner type</label>
+        <select name="banner_type">
+          <option value="new" {% if eb.banner_type=='new' %}selected{% endif %}>🆕 New Product</option>
+          <option value="discount" {% if eb.banner_type=='discount' %}selected{% endif %}>🔥 Discount</option>
+          <option value="announcement" {% if eb.banner_type=='announcement' %}selected{% endif %}>📢 Announcement</option>
+        </select></div>
+      <div class="field"><label>Placement</label>
+        <select name="placement">
+          <option value="top" {% if eb.placement=='top' %}selected{% endif %}>⬆️ Top — very top of home page</option>
+          <option value="middle" {% if eb.placement=='middle' %}selected{% endif %}>↔️ Middle — middle of home page</option>
+          <option value="bottom" {% if eb.placement=='bottom' %}selected{% endif %}>⬇️ Bottom — bottom of home page</option>
+          <option value="product" {% if eb.placement=='product' %}selected{% endif %}>📦 Product page — near Add to Cart</option>
+        </select></div>
+    </div>
+    <div class="field"><label>Title *</label>
+      <input type="text" name="title" value="{{ eb.title or '' }}" placeholder="e.g. New Winter Collection!" required>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <label style="font-size:13px;color:var(--muted)">🎨 Title text color:</label>
+        <input type="color" name="title_color" value="{{ eb.title_color or '#1c1a15' }}" style="width:44px;height:32px;border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:2px">
+      </div></div>
+    <div class="field"><label>Subtitle</label>
+      <input type="text" name="subtitle" value="{{ eb.subtitle or '' }}" placeholder="e.g. Flat 20% off — limited time">
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <label style="font-size:13px;color:var(--muted)">🎨 Subtitle text color:</label>
+        <input type="color" name="subtitle_color" value="{{ eb.subtitle_color or '#5b5346' }}" style="width:44px;height:32px;border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:2px">
+      </div></div>
+    <div class="field"><label>Banner image {% if edit_banner %}(leave empty to keep current){% else %}(optional){% endif %}</label>
+      {% if eb.image_url %}<img src="{{ eb.image_url }}" style="width:220px;border-radius:10px;margin-bottom:8px"><br>{% endif %}
+      <input type="file" name="image" accept=".jpg,.jpeg,.png,.webp"></div>
+    <div class="field"><label>Product link (clicking Shop Now opens this product)</label>
+      <select name="product_id">
+        <option value="">— No link —</option>
+        {% for p in products %}
+        <option value="{{ p.id }}" {% if eb.product_id==p.id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select></div>
+    <div class="field-row">
+      <div class="field"><label>Sort order (smaller number = first)</label>
+        <input type="number" name="sort_order" min="0" value="{{ eb.sort_order if eb.sort_order is not none else 0 }}"></div>
+      {% if edit_banner %}
+      <div class="field"><label>&nbsp;</label>
+        <label class="check-row"><input type="checkbox" name="is_active" {% if eb.is_active %}checked{% endif %}> Active (show on site)</label></div>
+      {% endif %}
+    </div>
+    <button class="btn" type="submit">{{ '💾 Save' if edit_banner else '➕ Add Banner' }}</button>
+    {% if edit_banner %}<a class="btn btn-ghost" href="{{ url_for('admin_banners') }}">❌ Cancel</a>{% endif %}
+  </form>
+</div>
+
+<div class="tbl-wrap"><table class="tbl">
+  <tr><th>Banner</th><th>Placement</th><th>Status</th><th></th></tr>
+  {% for b in banners %}
+  <tr>
+    <td><b>[{{ b.banner_type }}] {{ b.title }}</b><br>
+      <span style="color:var(--muted);font-size:12px">{{ b.subtitle or '' }}{% if prod_names.get(b.product_id) %} | 🔗 {{ prod_names.get(b.product_id) }}{% endif %}</span></td>
+    <td>{{ b.placement }}</td>
+    <td>{% if b.is_active %}<span class="pill pill-green">🟢 Active</span>{% else %}<span class="pill pill-red">🔴 Hidden</span>{% endif %}</td>
+    <td style="white-space:nowrap">
+      <form class="inline-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="toggle"><input type="hidden" name="banner_id" value="{{ b.id }}">
+        <button class="btn btn-sm btn-ghost" type="submit">🔄</button></form>
+      <a class="btn btn-sm" href="{{ url_for('admin_banners', edit=b.id) }}">✏️</a>
+      <form class="inline-form" method="post" onsubmit="return confirm('Delete this banner?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="banner_id" value="{{ b.id }}">
+        <button class="btn btn-sm btn-danger" type="submit">🗑️</button></form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" style="text-align:center;color:var(--muted)">No banners yet.</td></tr>
+  {% endfor %}
+</table></div>
+{% endblock %}

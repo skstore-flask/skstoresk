@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Order {{ order.order_number }} — {{ store_name }}{% endblock %}
+
+{% block content %}
+<div class="form-card" style="text-align:center">
+  <div style="font-size:56px">🎉</div>
+  <h2>Order placed successfully!</h2>
+  <p style="margin:12px 0">Order Number:</p>
+  <div style="font-size:28px;font-weight:900;color:var(--gold-lt);letter-spacing:2px">{{ order.order_number }}</div>
+  <div class="flash flash-info" style="text-align:left;margin-top:18px">
+    {% if (order.payment_method or 'COD') != 'COD' %}
+    ⏳ <b>Payment Pending Verification.</b> You paid via <b>{{ order.payment_method }}</b> (TID: {{ order.payment_tid or '—' }}). We will confirm your order after verifying the payment.
+    {% else %}
+    📞 Our team will contact you soon to confirm your order. Payment will be <b>Cash on Delivery</b>.
+    {% endif %}
+  </div>
+  {% if email %}
+    {% if cust_ok %}<div class="flash flash-success">📧 Confirmation email sent: {{ email }}</div>
+    {% else %}<div class="flash flash-error">Could not send email ({{ cust_msg }}) — your order is safe.</div>{% endif %}
+  {% endif %}
+  <div class="totals" style="text-align:left">
+    {% for it in order.get('items', []) or [] %}
+    <div class="row"><span>{{ it.name }}{% if it.variant_label %} <span class="var-tag">🎨 {{ it.variant_label }}</span>{% endif %} × {{ it.qty }}</span><b>{{ format_price(it.price * it.qty) }}</b></div>
+    {% endfor %}
+    <div class="row grand"><span>Total</span><span>{{ format_price(order.total) }}</span></div>
+  </div>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <a class="btn" href="{{ url_for('track', o=order.order_number) }}">🚚 Track My Order</a>
+    <a class="btn btn-ghost" href="{{ url_for('index') }}">🛍️ Continue Shopping</a>
+  </div>
+</div>
+{% endblock %}

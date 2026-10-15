@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Checkout — {{ store_name }}{% endblock %}
+
+{% block content %}
+<h1 class="section-title">💳 Checkout</h1>
+<div class="flash flash-info">💵 Pay by <b>Cash on Delivery</b> or <b>advance payment</b> (Easypaisa / Bank Transfer).</div>
+
+{% if intl_blocked %}
+<div class="flash flash-error" style="font-size:16px">
+  🌍 <b>Sorry! We currently deliver within Pakistan only.</b><br><br>
+  International shipping is not available at the moment — we're working on it and will announce it soon. Thank you for understanding! ❤️
+</div>
+{% endif %}
+
+{% for e in errors %}
+<div class="flash flash-error">{{ e }}</div>
+{% endfor %}
+
+<div class="totals">
+  <b>🧾 Order Summary</b>
+  {% for it in items %}
+  <div class="row"><span>{{ it.name }}{% if it.variant_label %} <span class="var-tag">🎨 {{ it.variant_label }}</span>{% endif %} × {{ it.qty }}</span><b>{{ format_price(it.price * it.qty) }}</b></div>
+  {% endfor %}
+  <div class="row"><span>📦 Parcel weight</span><b id="summary-weight">{{ weight_grams }} g + packing</b></div>
+  <div class="row"><span>Delivery (<span id="summary-city">{{ form.city or (cities[0].city if cities else 'your city') }}</span>)</span><b id="summary-fee">{{ format_price(fee) }}</b></div>
+  <div class="row grand"><span>Total</span><span id="summary-total">{{ format_price(total) }}</span></div>
+</div>
+
+<div class="form-card">
+  <h3>📋 Delivery Details</h3><br>
+  <form method="post" action="{{ url_for('checkout') }}" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label>Full Name *</label>
+      <input type="text" name="name" value="{{ form.name or '' }}" required></div>
+    <div class="field"><label>Email (for order confirmation)</label>
+      <input type="email" name="email" value="{{ form.email or '' }}" placeholder="you@example.com"></div>
+    <div class="field"><label>Phone Number *</label>
+      <input type="text" name="phone" value="{{ form.phone or '' }}" placeholder="03XXXXXXXXX" required></div>
+    <div class="field"><label>Complete Address *</label>
+      <textarea name="address" placeholder="House, street, area…" required>{{ form.address or '' }}</textarea></div>
+    <div class="field-row">
+      <div class="field"><label>City *</label>
+        <input type="text" name="city" id="city_input" value="{{ form.city or '' }}" placeholder="e.g. Karachi, Lahore" oninput="cityPick()" required>
+        <div class="hint">🚚 Delivery charges depend on your city + parcel weight — your exact fee is shown in the Order Summary above. Please enter your full city name.</div>
+      </div>
+      <div class="field"><label>Country *</label>
+        <select name="country">
+          {% for c in ["Pakistan","United Arab Emirates","Saudi Arabia","United Kingdom","United States","Canada","Australia","Qatar","Kuwait","Oman","Bahrain","Malaysia","Turkey","Other"] %}
+          <option value="{{ c }}" {% if (form.country or 'Pakistan')==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <div class="hint">🌍 We currently deliver within Pakistan only.</div>
+      </div>
+    </div>
+    <button class="btn btn-block" type="submit">🛍️ Place Order</button>
+
+    <h3 style="margin-top:22px">💳 Payment Method</h3><br>
+    <label class="pay-opt"><input type="radio" name="payment_method" value="cod" checked onchange="payPick('cod')">
+      <b>💵 Cash on Delivery</b> — pay when your order arrives.</label>
+    {% for m in pay_methods %}
+    <label class="pay-opt"><input type="radio" name="payment_method" value="{{ m.id }}" onchange="payPick('{{ m.id }}')">
+      <b>{% if m.method_type=='easypaisa' %}📱{% else %}🏦{% endif %} {{ m.title }}</b> — pay in advance.</label>
+    <div class="pay-details" id="pay-details-{{ m.id }}" style="display:none">
+      <b>Pay to this {{ 'Easypaisa account' if m.method_type=='easypaisa' else 'bank account' }}:</b><br>
+      Title: <b>{{ m.title }}</b><br>
+      {% if m.bank_name %}Bank: <b>{{ m.bank_name }}</b><br>{% endif %}
+      {{ 'Mobile / Account' if m.method_type=='easypaisa' else 'Account Number' }}: <b>{{ m.account_number }}</b><br>
+      {% if m.iban %}IBAN: <b>{{ m.iban }}</b><br>{% endif %}
+      <span class="hint">After payment, enter the Transaction ID (TID) and upload your payment slip below.</span>
+    </div>
+    {% endfor %}
+    <div id="prepay-fields" style="display:none">
+      <div class="field"><label>Transaction ID (TID) *</label>
+        <input type="text" name="payment_tid" id="payment_tid" placeholder="e.g. 12345678901"></div>
+      <div class="field"><label>Payment Slip Screenshot *</label>
+        <input type="file" name="payment_slip" id="payment_slip" accept=".jpg,.jpeg,.png,.webp">
+        <div class="hint">Upload a clear screenshot of your payment confirmation.</div></div>
+      <div class="flash flash-info" style="margin:0">⏳ Your order will be <b>Payment Pending Verification</b> — we confirm it after verifying your payment.</div>
+    </div>
+  </form>
+</div>
+<script>
+var FEE_BY_CITY = {{ fee_by_city | tojson }};
+var SUBTOTAL = {{ subtotal }};
+function fmtRs(v){ return 'Rs ' + Math.round(v).toLocaleString('en-PK'); }
+function cityPick(){
+  var input = document.getElementById('city_input');
+  var city = input.value.trim();
+  var fee = FEE_BY_CITY['__default__'];
+  var label = city || 'your city';
+  // Case-insensitive city match against the rate table (server does the same).
+  for(var key in FEE_BY_CITY){
+    if(key !== '__default__' && key.toLowerCase() === city.toLowerCase()){ fee = FEE_BY_CITY[key]; break; }
+  }
+  document.getElementById('summary-city').textContent = label;
+  document.getElementById('summary-fee').textContent = fmtRs(fee);
+  document.getElementById('summary-total').textContent = fmtRs(SUBTOTAL + fee);
+}
+cityPick();
+function payPick(id){
+  document.querySelectorAll('.pay-details').forEach(function(d){ d.style.display = 'none'; });
+  var pre = document.getElementById('prepay-fields');
+  var tid = document.getElementById('payment_tid');
+  var slip = document.getElementById('payment_slip');
+  if(id === 'cod'){
+    pre.style.display = 'none'; tid.required = false; slip.required = false;
+  } else {
+    var det = document.getElementById('pay-details-' + id);
+    if(det) det.style.display = 'block';
+    pre.style.display = 'block'; tid.required = true; slip.required = true;
+  }
+}
+</script>
+{% endblock %}
