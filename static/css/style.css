@@ -370,6 +370,10 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 
 .swatch span { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); }
 .swatch:hover { transform: scale(1.1); }
 .swatch.on { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,150,46,.45); transform: scale(1.08); }
+.swatch.has-img { border-radius: 10px; }
+.swatch.has-img span { border-radius: 8px; }
+#varHoverTip { position: fixed; z-index: 9999; display: none; pointer-events: none; width: 130px; height: 130px; }
+#varHoverTip img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 2px solid #fff; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
 .pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill-btn { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 999px; padding: 8px 16px; cursor: pointer; font-size: 14px; transition: all .15s ease; }
 .pill-btn:hover { border-color: var(--gold); }

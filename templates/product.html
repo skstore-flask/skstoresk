@@ -80,6 +80,7 @@
       <div class="var-hint" id="varHint">⚠️ Please select a color and size first</div>
       <div id="varStockLine" style="margin-top:6px"></div>
     </div>
+    <div id="varHoverTip"><img src="" alt=""></div>
     {% endif %}
 
     <form method="post" action="{{ url_for('cart_add', pid=p.id) }}" id="addForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -109,9 +110,54 @@
       var galImg = document.querySelector(".gallery-main img");
       var galOrig = galImg ? galImg.src : "";
       function setGalImg(url) { if (galImg) galImg.src = url || galOrig; }
+      // ---- Daraz-style hover preview: swatch hover -> main image + cursor tooltip ----
+      var hoverTip = document.getElementById("varHoverTip");
+      var hoverTipImg = hoverTip ? hoverTip.querySelector("img") : null;
+      function colorImg(c) {
+        var found = "", foundSize = "";
+        for (var i = 0; i < VARIANTS.length; i++) {
+          var x = VARIANTS[i];
+          if (x.color === c && x.image) {
+            if (!found) found = x.image;
+            if (selS && x.size === selS) { foundSize = x.image; break; }
+          }
+        }
+        return foundSize || found;
+      }
+      function showTip(e, url) {
+        if (!hoverTip || !hoverTipImg || !url) return;
+        hoverTipImg.src = url;
+        hoverTip.style.display = "block";
+        moveTip(e);
+      }
+      function moveTip(e) {
+        if (!hoverTip) return;
+        var w = 130, h = 130;
+        var x = e.clientX + 18, y = e.clientY + 18;
+        if (x + w > window.innerWidth) x = e.clientX - w - 10;
+        if (y + h > window.innerHeight) y = e.clientY - h - 10;
+        hoverTip.style.left = Math.max(4, x) + "px";
+        hoverTip.style.top = Math.max(4, y) + "px";
+      }
+      function hideTip() { if (hoverTip) hoverTip.style.display = "none"; }
       if (hasC) Array.prototype.forEach.call(hasC.querySelectorAll(".swatch"), function (b) {
         var c = b.dataset.color;
-        b.querySelector("span").style.background = HEX[c] || "#ccc";
+        var cimg = colorImg(c);
+        if (cimg) {
+          b.classList.add("has-img");
+          var sp = b.querySelector("span");
+          sp.style.backgroundImage = "url('" + cimg + "')";
+          sp.style.backgroundSize = "cover";
+          sp.style.backgroundPosition = "center";
+        } else {
+          b.querySelector("span").style.background = HEX[c] || "#ccc";
+        }
+        b.addEventListener("mouseenter", function (e) {
+          var img = colorImg(c);
+          if (img) { setGalImg(img); showTip(e, img); }
+        });
+        b.addEventListener("mousemove", function (e) { if (colorImg(c)) moveTip(e); });
+        b.addEventListener("mouseleave", function () { hideTip(); refresh(); });
         b.addEventListener("click", function () {
           selC = c;
           Array.prototype.forEach.call(hasC.querySelectorAll(".swatch"), function (x) { x.classList.toggle("on", x === b); });
