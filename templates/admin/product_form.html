@@ -158,9 +158,10 @@
   function setExpanded(v) {
     expanded = v;
     panel.classList.toggle("open", v);
+    panel.style.display = v ? "block" : "none";
     caret.textContent = v ? "▾" : "▸";
   }
-  document.getElementById("varHead").addEventListener("click", function () {
+  document.getElementById("varToggle").addEventListener("click", function () {
     userTouched = true;
     setExpanded(!expanded);
     if (expanded && !ALL_COLORS.length && !ALL_SIZES.length) suggest();
