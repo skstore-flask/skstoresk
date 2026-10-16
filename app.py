@@ -295,7 +295,8 @@ def create_app():
             {"id": v.get("id"), "color": v.get("color") or "",
              "size": v.get("size_label") or "",
              "stock": int(v.get("stock") or 0),
-             "price": float(v.get("price_override") or 0) or sale_price(p)}
+             "price": float(v.get("price_override") or 0) or sale_price(p),
+             "image": v.get("image_url") or ""}
             for v in variants
         ]
         return render_template(
@@ -920,6 +921,24 @@ def create_app():
                 taken = set()
             slug = share_lib.unique_slug(share_lib.slugify(name), taken)
 
+        # ---- variants pre-parse: when variants exist, variant stock governs ----
+        vraw = (request.form.get("variants_json") or "").strip()
+        vrows = []
+        vparse_error = None
+        if vraw:
+            try:
+                parsed = json.loads(vraw)
+                if isinstance(parsed, list):
+                    vrows = parsed
+            except (ValueError, TypeError) as e:
+                vparse_error = e
+        variant_stock_total = None
+        if vrows:
+            try:
+                variant_stock_total = sum(max(0, int(r.get("stock") or 0)) for r in vrows)
+            except (TypeError, ValueError):
+                variant_stock_total = None
+
         data = {
             "name": name, "description": description, "slug": slug,
             "tags": norm_tags, "price": price,
@@ -927,7 +946,8 @@ def create_app():
             "buy_price": buy_price, "delivery_expense": delivery_exp,
             "packing_expense": packing_exp, "category_id": category_id,
             "images": urls, "video_url": video_url, "youtube_url": yt_url,
-            "stock": stock, "sold_count": sold_count, "is_active": is_active,
+            "stock": variant_stock_total if variant_stock_total is not None else stock,
+            "sold_count": sold_count, "is_active": is_active,
         }
         # weight_grams only when the column exists (006 ran); otherwise the
         # product still saves without it.
@@ -950,18 +970,20 @@ def create_app():
 
         # ---- variants (optional JSON from the Variants panel) ----
         saved_pid = pid or saved.get("id")
-        vraw = (request.form.get("variants_json") or "").strip()
-        if vraw and saved_pid:
+        if vparse_error is not None:
+            flash("⚠️ Could not understand the variants format — product was saved, please check variants again.",
+                  "error")
+        elif vrows and saved_pid:
             try:
-                vrows = json.loads(vraw)
-                if isinstance(vrows, list):
-                    db.save_variants(saved_pid, vrows)
-                    if vrows:
-                        flash(f"🎨 {len([r for r in vrows if r.get('color') or r.get('size_label')])} variants saved!",
-                              "success")
-            except (ValueError, TypeError):
-                flash("⚠️ Could not understand the variants format — product was saved, please check variants again.",
-                      "error")
+                rows_to_save = list(vrows)
+                if not db.variants_image_column_ok():
+                    for r in rows_to_save:
+                        r.pop("image_url", None)
+                    flash("ℹ️ Variant images need migration 008 — variants saved without images. Run sql/migrations/008_variant_images.sql in Supabase.", "info")
+                db.save_variants(saved_pid, rows_to_save)
+                if rows_to_save:
+                    flash(f"🎨 {len([r for r in rows_to_save if r.get('color') or r.get('size_label')])} variants saved!",
+                          "success")
             except Exception as e:
                 flash(f"⚠️ Could not save variants: {e}", "error")
 

@@ -106,6 +106,9 @@
       var stockLine = document.getElementById("varStockLine");
       var priceBig = document.querySelector(".price-big");
       var qtyInput = document.getElementById("qty");
+      var galImg = document.querySelector(".gallery-main img");
+      var galOrig = galImg ? galImg.src : "";
+      function setGalImg(url) { if (galImg) galImg.src = url || galOrig; }
       if (hasC) Array.prototype.forEach.call(hasC.querySelectorAll(".swatch"), function (b) {
         var c = b.dataset.color;
         b.querySelector("span").style.background = HEX[c] || "#ccc";
@@ -131,6 +134,7 @@
           vidInput.value = ""; addBtn.disabled = true; addBtn.style.opacity = ".45";
           hint.style.display = ""; stockLine.innerHTML = "";
           if (priceBig) priceBig.textContent = fmt(BASE_PRICE);
+          setGalImg("");
           return;
         }
         var v = null;
@@ -142,6 +146,7 @@
           vidInput.value = ""; addBtn.disabled = true; addBtn.style.opacity = ".45";
           hint.style.display = "none";
           stockLine.innerHTML = '<span class="out-stock">This combination is out of stock</span>';
+          setGalImg(v && v.image ? v.image : "");
           return;
         }
         vidInput.value = v.id;
@@ -153,6 +158,7 @@
         stockLine.innerHTML = v.stock <= 5
           ? '<span class="stock-low">⚡ Only ' + v.stock + " left!</span>"
           : '<span class="stock-ok">✅ In Stock</span>';
+        setGalImg(v.image || "");
       }
     })();
     </script>

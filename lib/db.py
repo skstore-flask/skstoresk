@@ -160,7 +160,7 @@ def save_variants(product_id: str, rows: list):
             po = po if po > 0 else None
         except (TypeError, ValueError):
             po = None
-        clean.append({
+        row = {
             "product_id": product_id,
             "color": color or None,
             "size_label": size_label or None,
@@ -168,9 +168,25 @@ def save_variants(product_id: str, rows: list):
             "stock": stock,
             "sku": (r.get("sku") or "").strip() or None,
             "sort": i,
-        })
+        }
+        # Only send image_url when set — keeps inserts working before 008 runs.
+        if (r.get("image_url") or "").strip():
+            row["image_url"] = (r.get("image_url") or "").strip()
+        clean.append(row)
     if clean:
         sb.table("product_variants").insert(clean).execute()
+
+
+def variants_image_column_ok() -> bool:
+    """True when product_variants.image_url exists (008 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("product_variants").select("image_url").limit(1).execute()
+        return True
+    except Exception:
+        return False
 
 
 def update_variant_stock(variant_id: str, stock: int):

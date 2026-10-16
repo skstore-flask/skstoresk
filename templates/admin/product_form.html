@@ -146,7 +146,7 @@
   var sizesBox = document.getElementById("varSizes");
   var combosBox = document.getElementById("varCombos");
   var hiddenJson = document.getElementById("variants_json");
-  var form = document.getElementById("productForm");
+  var form = document.getElementById("product-form");
   var customSize = document.getElementById("varCustomSize");
   var customColor = document.getElementById("varCustomColor");
 
@@ -239,7 +239,8 @@
       var k = row.getAttribute("data-ckey");
       comboVals[k] = {
         stock: parseInt(row.querySelector(".cb-stock").value || 0, 10) || 0,
-        price: parseFloat(row.querySelector(".cb-price").value || 0) || 0
+        price: parseFloat(row.querySelector(".cb-price").value || 0) || 0,
+        image_url: (row.querySelector(".cb-img-url") || {}).value || ""
       };
     });
   }
@@ -264,13 +265,57 @@
         r.setAttribute("data-ckey", k);
         r.innerHTML =
           '<span>' + (c ? esc(c) : '<span style="color:var(--muted)">(no color)</span>') + '</span>' +
-          '<input type="number" min="0" step="1" class="cb-stock" placeholder="Stock *" title="Stock" value="' + (v.stock || "") + '">' +
-          '<input type="number" min="0" step="any" class="cb-price" placeholder="Price (opt)" title="Price override — empty = product price" value="' + (v.price || "") + '">';
+          '<input type="number" min="0" step="1" class="cb-stock" placeholder="Stock *" title="Stock — this stock governs (product stock = sum of variant stocks)" value="' + (v.stock || "") + '">' +
+          '<input type="number" min="0" step="any" class="cb-price" placeholder="Price (opt)" title="Price override — empty = product price" value="' + (v.price || "") + '">' +
+          '<span class="cb-img-cell">' +
+            (v.image_url ? '<img class="cb-img-thumb" src="' + esc(v.image_url) + '" alt="">' : '<img class="cb-img-thumb" src="" alt="" style="display:none">') +
+            '<input type="file" accept=".jpg,.jpeg,.png,.webp" class="cb-img-file" title="Variant photo (optional) — uploads on select">' +
+            '<input type="hidden" class="cb-img-url" value="' + esc(v.image_url || "") + '">' +
+            '<span class="cb-img-status"></span>' +
+          '</span>';
         g.appendChild(r);
       });
       combosBox.appendChild(g);
     });
   }
+
+  // ---------- per-variant photo (Daraz-style): upload the moment a file is picked ----------
+  combosBox.addEventListener("change", function (e) {
+    var inp = e.target;
+    if (!inp || !inp.classList || !inp.classList.contains("cb-img-file")) return;
+    var files = inp.files || [];
+    if (!files.length) return;
+    var row = inp.closest("[data-ckey]");
+    var statusEl = row ? row.querySelector(".cb-img-status") : null;
+    var thumbEl = row ? row.querySelector(".cb-img-thumb") : null;
+    var hiddenEl = row ? row.querySelector(".cb-img-url") : null;
+    var f = files[0];
+    if (statusEl) statusEl.textContent = "⏳ Uploading…";
+    var fd = new FormData();
+    fd.append("file", f);
+    fd.append("kind", "image");
+    fd.append("csrf_token", (form.querySelector('input[name="csrf_token"]') || {}).value || "");
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/admin/upload-media", true);
+    xhr.onload = function () {
+      var ok = false, url = "", err = "";
+      try { var res = JSON.parse(xhr.responseText || "{}"); ok = !!res.ok; url = res.url || ""; err = res.error || ""; } catch (e2) { err = "Bad server response"; }
+      if (xhr.status >= 200 && xhr.status < 300 && ok && url) {
+        if (hiddenEl) hiddenEl.value = url;
+        if (thumbEl) { thumbEl.src = url; thumbEl.style.display = ""; }
+        if (statusEl) statusEl.textContent = "✅ Uploaded";
+        saveComboVals();
+      } else {
+        if (statusEl) statusEl.textContent = "❌ Failed: " + (err || ("HTTP " + xhr.status)) + " — select again";
+        inp.value = "";
+      }
+    };
+    xhr.onerror = function () {
+      if (statusEl) statusEl.textContent = "❌ Network error — select again";
+      inp.value = "";
+    };
+    xhr.send(fd);
+  });
 
   // ---------- smart suggestions ----------
   var AGE_RULES = [
@@ -330,6 +375,7 @@
           size_label: a,
           stock: v.stock || 0,
           price_override: v.price || 0,
+          image_url: v.image_url || "",
           sku: autoSku(c, a)
         });
       });
@@ -346,7 +392,7 @@
       var c = v.color || "", s = v.size_label || "";
       if (c && !seenC[c]) { seenC[c] = 1; selColors.push(c); }
       if (s && selAges.indexOf(s) < 0) { selAges.push(s); seenS.push(s); }
-      comboVals[key(s, c)] = { stock: parseInt(v.stock || 0, 10) || 0, price: parseFloat(v.price_override || 0) || 0 };
+      comboVals[key(s, c)] = { stock: parseInt(v.stock || 0, 10) || 0, price: parseFloat(v.price_override || 0) || 0, image_url: v.image_url || "" };
     });
     ALL_COLORS = selColors.slice();
     ALL_SIZES = selAges.slice();

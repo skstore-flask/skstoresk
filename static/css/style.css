@@ -387,7 +387,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 
 .var-addrow input[type="text"] { flex: 1; }
 .var-combo-group { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .var-combo-group > b { display: block; margin-bottom: 8px; color: var(--gold); font-size: 14px; }
-.var-combo { display: grid; grid-template-columns: 110px 90px 110px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.var-combo { display: grid; grid-template-columns: 110px 90px 110px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.cb-img-cell { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.cb-img-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; }
+.cb-img-cell input[type="file"] { min-width: 0; flex: 1; font-size: 12px; padding: 4px; }
+.cb-img-status { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .var-combo input { width: 100%; padding: 7px 9px; font-size: 13px; }
 @media (max-width: 640px) { .var-row { grid-template-columns: 1fr 1fr 80px 34px; } .var-row input[title="Price override"], .var-row input[title="SKU"] { grid-column: span 1; } }
 
