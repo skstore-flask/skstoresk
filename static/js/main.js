@@ -230,6 +230,9 @@ document.addEventListener("DOMContentLoaded", function () {
     .then(function (res) {
       if (res.ok && res.d.success) {
         showToast(res.d.message, false, true);
+        if (window.fbq && res.d.px) {
+          fbq('track', 'AddToCart', { content_ids: [res.d.px.id], content_type: 'product', value: res.d.px.value, currency: 'PKR' });
+        }
         var badge = document.querySelector(".cart-badge");
         var link = document.querySelector('a[href*="cart"]');
         if (typeof res.d.cart_count === "number") {

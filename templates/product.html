@@ -45,6 +45,7 @@
     <div style="margin:8px 0">
       {% if is_new(p.created_at, new_days) %}<span class="badge badge-new" style="position:static">NEW</span>{% endif %}
       {% if sp < lp and lp > 0 %}<span class="badge badge-disc" style="position:static">-{{ ((1 - sp/lp)*100)|round|int }}% OFF</span>{% endif %}
+      {% if p.get('advance_required') %}<span class="badge" style="position:static;background:#fdf3d7;border:1px solid #c9a227;color:#7a5f0e">💳 Advance Payment Required</span>{% endif %}
     </div>
     <div>
       <span class="price-big">{{ format_price(sp) }}</span>
@@ -208,7 +209,11 @@
       }
     })();
     </script>
+    {% if p.get('advance_required') %}
+    <div class="note-box">💳 <b>Advance Payment Required</b> — this product must be paid in advance (Easypaisa / Bank Transfer) at checkout. Your order is placed after you submit your TID and payment slip.</div>
+    {% else %}
     <div class="note-box">💵 <b>Cash on Delivery</b> — pay when your order arrives.</div>
+    {% endif %}
 
     {% for b in prod_banners %}
     <div class="banner-card" style="margin-top:12px">
@@ -292,4 +297,5 @@
     </form>
   </div>
 </div>
+{% if pixel_id %}<script>fbq('track', 'ViewContent', {content_ids: [{{ p.id|tojson }}], content_type: 'product', value: {{ sp|tojson }}, currency: 'PKR'});</script>{% endif %}
 {% endblock %}

@@ -39,6 +39,9 @@ SQL_BANNER_COLORS = """alter table public.banners
 alter table public.banners
   add column if not exists subtitle_color text not null default '#5b5346';"""
 
+SQL_ADVANCE_REQUIRED = """alter table public.products
+  add column if not exists advance_required boolean not null default false;"""
+
 
 def run_checks():
     """Run all checks. Returns list of {name, ok, hint}."""
@@ -124,6 +127,32 @@ def run_checks():
             "Banner text colors",
             "The title_color/subtitle_color columns are missing — copy the SQL below, run it in the Supabase SQL Editor, then press Run Check Now again.",
             SQL_BANNER_COLORS))
+
+    # 3e. advance_required column (009 migration)
+    try:
+        sb.table("products").select("advance_required").limit(1).execute()
+        checks.append(_ok("Advance payment column"))
+    except Exception:  # noqa: BLE001
+        checks.append(_fail(
+            "Advance payment column",
+            "The advance_required column is missing — the per-product 'Advance Payment Required' option will not save until you copy the SQL below, run it in the Supabase SQL Editor, then press Run Check Now again.",
+            SQL_ADVANCE_REQUIRED))
+
+    # 3f. ad tracking (010 migration)
+    try:
+        sb.table("orders").select("ad_source").limit(1).execute()
+        sb.table("ad_visits").select("id").limit(1).execute()
+        checks.append(_ok("Ad tracking"))
+    except Exception:  # noqa: BLE001
+        checks.append(_fail(
+            "Ad tracking",
+            "Ad tracking is not set up — the orders.ad_source column or ad_visits table is missing. Copy the SQL below, run it in the Supabase SQL Editor, then press Run Check Now again.",
+            "alter table public.orders add column if not exists ad_source text;\n"
+            "create table if not exists public.ad_visits (\n"
+            "  id bigint generated always as identity primary key,\n"
+            "  source text not null,\n"
+            "  created_at timestamptz not null default now()\n"
+            ");"))
 
     # 4. storage buckets
     try:

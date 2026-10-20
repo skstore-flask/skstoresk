@@ -94,6 +94,8 @@
 
     <label class="check-row"><input type="checkbox" name="is_active" {% if p.is_active|default(true) %}checked{% endif %}> Active (show on site)</label>
 
+    <label class="check-row"><input type="checkbox" name="advance_required" {% if p.advance_required %}checked{% endif %}> 💳 Advance Payment Required — the customer must pay in advance (Easypaisa / Bank Transfer) before the order is placed; Cash on Delivery will not be offered for this product</label>
+
     <div class="field" style="margin-top:14px">
       <button type="button" id="varToggle" class="btn btn-ghost btn-sm">🎨 Variants (Color / Size / Age) — optional <span id="varCaret">▾</span></button>
       <div id="varPanel" style="display:none;margin-top:10px;border:1px dashed var(--gold);border-radius:10px;padding:12px">

@@ -3,7 +3,11 @@
 
 {% block content %}
 <h1 class="section-title">💳 Checkout</h1>
+{% if advance_required %}
+<div class="flash flash-error">💳 <b>Advance payment is required for this order</b> — {{ advance_names|join(', ') }} must be paid in advance. Cash on Delivery is not available for this order. Please pay by Easypaisa / Bank Transfer below and submit your TID + payment slip; your order will be placed right after that.</div>
+{% else %}
 <div class="flash flash-info">💵 Pay by <b>Cash on Delivery</b> or <b>advance payment</b> (Easypaisa / Bank Transfer).</div>
+{% endif %}
 
 {% if intl_blocked %}
 <div class="flash flash-error" style="font-size:16px">
@@ -54,10 +58,10 @@
     <button class="btn btn-block" type="submit">🛍️ Place Order</button>
 
     <h3 style="margin-top:22px">💳 Payment Method</h3><br>
-    <label class="pay-opt"><input type="radio" name="payment_method" value="cod" checked onchange="payPick('cod')">
-      <b>💵 Cash on Delivery</b> — pay when your order arrives.</label>
+    <label class="pay-opt" {% if advance_required %}style="opacity:.55"{% endif %}><input type="radio" name="payment_method" value="cod" {% if not advance_required %}checked{% endif %} {% if advance_required %}disabled{% endif %} onchange="payPick('cod')">
+      <b>💵 Cash on Delivery</b> — {% if advance_required %}<b>Not available for this order</b>{% else %}pay when your order arrives.{% endif %}</label>
     {% for m in pay_methods %}
-    <label class="pay-opt"><input type="radio" name="payment_method" value="{{ m.id }}" onchange="payPick('{{ m.id }}')">
+    <label class="pay-opt"><input type="radio" name="payment_method" value="{{ m.id }}" {% if advance_required and loop.first %}checked{% endif %} onchange="payPick('{{ m.id }}')">
       <b>{% if m.method_type=='easypaisa' %}📱{% else %}🏦{% endif %} {{ m.title }}</b> — pay in advance.</label>
     <div class="pay-details" id="pay-details-{{ m.id }}" style="display:none">
       <b>Pay to this {{ 'Easypaisa account' if m.method_type=='easypaisa' else 'bank account' }}:</b><br>
@@ -78,6 +82,7 @@
     </div>
   </form>
 </div>
+{% if pixel_id %}<script>fbq('track', 'InitiateCheckout', {value: {{ total|tojson }}, currency: 'PKR', num_items: {{ items|sum(attribute='qty') }}});</script>{% endif %}
 <script>
 var FEE_BY_CITY = {{ fee_by_city | tojson }};
 var SUBTOTAL = {{ subtotal }};
@@ -109,5 +114,6 @@ function payPick(id){
     pre.style.display = 'block'; tid.required = true; slip.required = true;
   }
 }
+{% if advance_required and pay_methods %}payPick('{{ pay_methods[0].id }}');{% endif %}
 </script>
 {% endblock %}

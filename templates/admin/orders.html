@@ -100,6 +100,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <form method="post" action="{{ url_for('admin_whatsapp_confirm', oid=o.id) }}" style="display:inline" target="_blank"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm" type="submit">💬 WhatsApp Confirm</button></form>
     {% if o.whatsapp_sent_at %}<span style="font-size:12px;color:var(--muted)">✅ WhatsApp sent {{ (o.whatsapp_sent_at or '')[:16].replace('T',' ') }}</span>{% endif %}
+    <div style="margin-top:6px">{% if o.ad_source %}<span style="background:#f5b301;color:#1a1a1a;font-weight:700;padding:4px 12px;border-radius:99px;font-size:12px">📢 Came via: {{ o.ad_source }}</span>{% else %}<span style="font-size:12px;color:var(--muted)">Direct / No Ad</span>{% endif %}</div>
   </div>
 </div>
 {% endfor %}

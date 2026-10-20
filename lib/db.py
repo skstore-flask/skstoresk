@@ -273,6 +273,42 @@ def orders_payment_columns_ok() -> bool:
         return False
 
 
+def orders_ad_column_ok() -> bool:
+    """True when orders has ad_source (010 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("orders").select("ad_source").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+def log_ad_visit(source: str) -> bool:
+    """Record one tagged/direct landing (010). Never raises."""
+    sb = client()
+    if not sb or not source:
+        return False
+    try:
+        sb.table("ad_visits").insert({"source": source}).execute()
+        return True
+    except Exception:
+        return False
+
+
+def list_ad_visits(limit=100000):
+    """All ad_visits rows [{source, created_at}]. None when table missing."""
+    sb = client()
+    if not sb:
+        return None
+    try:
+        return _ok(sb.table("ad_visits").select("source,created_at")
+                   .order("created_at", desc=True).limit(limit).execute())
+    except Exception:
+        return None
+
+
 def get_payment_methods(active_only=True):
     """All payment methods, ordered by sort_order. [] when table missing."""
     sb = client()
@@ -386,6 +422,18 @@ def products_weight_column_ok() -> bool:
         return False
     try:
         sb.table("products").select("weight_grams").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+def products_advance_column_ok() -> bool:
+    """True when products.advance_required exists (009 migration ran)."""
+    sb = client()
+    if not sb:
+        return False
+    try:
+        sb.table("products").select("advance_required").limit(1).execute()
         return True
     except Exception:
         return False

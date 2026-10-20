@@ -7,7 +7,7 @@ import hmac
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
@@ -43,6 +43,7 @@ def create_app():
         profit_per_unit=profit_per_unit,
         profit_after_cod=profit_after_cod,
         cod_fee_for=cod_fee_for,
+        youtube_id=youtube_id,
         store_name=config.STORE_NAME,
         app_url=config.APP_URL,
         share_url_for=share_lib.share_url_for,
@@ -87,10 +88,18 @@ def create_app():
             fb = ""
         if fb and not fb.startswith(("http://", "https://")):
             fb = "https://" + fb
+        px = ""
+        try:
+            px = re.sub(r"\D", "", db.get_setting("meta_pixel_id", "") or "")
+        except Exception:
+            px = ""
         return {
             "cart_count": sum(int(q) for q in cart.values()),
             "whatsapp_number": wa,
             "facebook_url": fb,
+            "pixel_id": px,
+            "px_add": session.pop("px_add", None),
+            "px_purchase": session.pop("px_purchase", None),
             "supabase_ok": config.supabase_configured(),
             "footer_email": config.GMAIL_USER or "",
         }
@@ -192,6 +201,27 @@ def create_app():
         if subtotal >= free_over:
             return 0.0, True, slabs, rate
         return float(rate) * slabs, False, slabs, float(rate)
+
+    # ---- ad tracking: ?ad=<name> (or utm_campaign) capture + visitor count ----
+    @app.before_request
+    def _capture_ad_source():
+        if request.method != "GET":
+            return
+        if request.path.startswith(("/admin", "/static")):
+            return
+        raw = request.args.get("ad") or request.args.get("utm_campaign") or ""
+        src = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z0-9\-_ ]", "-", raw)).strip()[:60]
+        if src:
+            session["ad_src"] = src
+        # Count a visitor once per session, on landing pages only.
+        if "visit_src" not in session and (
+                request.path == "/" or request.path.startswith("/product/")):
+            v = src or "direct"
+            session["visit_src"] = v
+            try:
+                db.log_ad_visit(v)
+            except Exception:
+                pass
 
     # ================= PUBLIC =================
     @app.route("/")
@@ -389,6 +419,9 @@ def create_app():
             stock = int(p.get("stock") or 0)
         if stock <= 0:
             return _fail("Out of stock.")
+        unit = sale_price(p)
+        if variant:
+            unit = float(variant.get("price_override") or 0) or unit
         cart = session.get("cart", {})
         key = f"{pid}|{variant['id']}" if variant else pid
         cart[key] = min(stock, cart.get(key, 0) + qty)
@@ -401,7 +434,9 @@ def create_app():
                     x for x in [variant.get("color"), variant.get("size_label")] if x)
             return jsonify({"success": True,
                             "message": f"✅ Added to cart{label}",
-                            "cart_count": count})
+                            "cart_count": count,
+                            "px": {"id": pid, "value": round(unit * qty, 2)}})
+        session["px_add"] = {"id": pid, "value": round(unit * qty, 2)}
         flash("✅ Added to cart", "success")
         return redirect(request.form.get("next") or url_for("cart"))
 
@@ -483,6 +518,13 @@ def create_app():
                         if (m.get("account_number") or "").strip()]
                        if pay_cols_ok else [])
 
+        # Per-product Advance Payment Required: if ANY cart item carries the
+        # flag, the whole order must be paid in advance (COD not offered).
+        # .get() keeps old product rows (pre-009, no key) safely falsy.
+        advance_required = any(it["product"].get("advance_required") for it in items)
+        advance_names = [it["product"].get("name") or "" for it in items
+                         if it["product"].get("advance_required")]
+
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
             email = (request.form.get("email") or "").strip()
@@ -510,7 +552,7 @@ def create_app():
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
                     fee=fee, total=total, errors=errors,
-                    intl_blocked=True, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                    intl_blocked=True, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 ), 200
@@ -532,13 +574,20 @@ def create_app():
             if errors:
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
-                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
             # ---- payment method: COD (default) or a prepay method ----
             pay_choice = (request.form.get("payment_method") or "cod").strip()
             pay_method_label, pay_tid, pay_slip_path, pay_status = "COD", None, None, "N/A"
+            # Advance-required enforcement (server is the authority — the
+            # hidden/disabled COD option on the page is only a courtesy).
+            if advance_required:
+                if not pay_methods:
+                    errors.append("Advance payment is required for an item in your cart, but no advance payment method is available right now. Please contact us on WhatsApp to place your order.")
+                elif pay_choice == "cod":
+                    errors.append("Cash on Delivery is not available for this order — advance payment is required for: " + ", ".join(advance_names) + ". Please select an advance payment method and submit your TID and payment slip.")
             if pay_choice != "cod":
                 pm = next((m for m in pay_methods if m["id"] == pay_choice), None)
                 if not pm:
@@ -553,7 +602,7 @@ def create_app():
                     if errors:
                         return render_template(
                             "checkout.html", items=line_items, subtotal=subtotal,
-                            fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                            fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                             form={"name": name, "email": email, "phone": phone,
                                   "address": address, "city": city, "country": country},
                         )
@@ -564,7 +613,7 @@ def create_app():
                             "checkout.html", items=line_items, subtotal=subtotal,
                             fee=fee, total=total,
                             errors=[f"Payment slip upload failed: {e}"],
-                            pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                            pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                             form={"name": name, "email": email, "phone": phone,
                                   "address": address, "city": city, "country": country},
                         )
@@ -574,7 +623,7 @@ def create_app():
             if errors:
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
-                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                    fee=fee, total=total, errors=errors, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
@@ -595,6 +644,13 @@ def create_app():
                     "payment_slip_path": pay_slip_path,
                     "payment_status": pay_status,
                 })
+            # Ad attribution (010): tag the order with the ad the customer
+            # came from, when the column exists and a tag was captured.
+            try:
+                if db.orders_ad_column_ok() and session.get("ad_src"):
+                    order_data["ad_source"] = session["ad_src"]
+            except Exception:
+                pass
             try:
                 resp = db.create_order(order_data)
                 order = resp.data[0]
@@ -602,7 +658,7 @@ def create_app():
                 return render_template(
                     "checkout.html", items=line_items, subtotal=subtotal,
                     fee=fee, total=total, errors=[f"Order could not be saved. Please try again. ({e})"],
-                    pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city,
+                    pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names,
                     form={"name": name, "email": email, "phone": phone,
                           "address": address, "city": city, "country": country},
                 )
@@ -623,6 +679,10 @@ def create_app():
             adm_ok, adm_msg = emailer.send_admin_alert(order)
             session["cart"] = {}
             session["last_order"] = order["order_number"]
+            # One-time Meta Pixel Purchase event (popped by inject_common on
+            # this render; eventID = order number for future CAPI dedup).
+            session["px_purchase"] = {"order_number": order["order_number"],
+                                      "value": round(float(total), 2)}
             return render_template(
                 "order.html", order=order, email=email,
                 cust_ok=cust_ok, cust_msg=cust_msg, adm_ok=adm_ok,
@@ -630,7 +690,7 @@ def create_app():
 
         return render_template("checkout.html", items=line_items,
                                subtotal=subtotal, fee=fee, total=total,
-                               errors=[], form={}, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city)
+                               errors=[], form={}, pay_methods=pay_methods, cities=cities, weight_grams=weight_grams, fee_by_city=fee_by_city, advance_required=advance_required, advance_names=advance_names)
 
     @app.route("/order/<order_number>")
     def order_success(order_number):
@@ -811,6 +871,7 @@ def create_app():
             return render_template("admin/product_form.html", p={**ex, **request.form},
                                    cats=cats, is_new=(pid is None))
         is_active = bool(request.form.get("is_active"))
+        advance_required = bool(request.form.get("advance_required"))
         cat_choice = request.form.get("category") or ""
         new_cat_name = (request.form.get("new_category") or "").strip()
         vchoice = request.form.get("video_choice") or "none"
@@ -953,6 +1014,12 @@ def create_app():
         # product still saves without it.
         if db.products_weight_column_ok():
             data["weight_grams"] = weight_grams
+        # advance_required only when the column exists (009 ran); otherwise
+        # the product still saves, with a warning when the toggle was ON.
+        if db.products_advance_column_ok():
+            data["advance_required"] = advance_required
+        elif advance_required:
+            flash("⚠️ 'Advance Payment Required' needs migration 009 — product saved without it. Run sql/migrations/009_advance_required.sql in Supabase, then edit the product and tick it again.", "error")
         try:
             if pid:
                 db.update_product(pid, data)
@@ -1473,6 +1540,62 @@ def create_app():
         return render_template("admin/payment_methods.html", methods=methods,
                                edit_method=edit_method)
 
+    # ---- ads report ----
+    @app.route("/admin/ads-report")
+    @admin_required
+    def admin_ads_report():
+        days = request.args.get("days")
+        cutoff = None
+        if days:
+            try:
+                cutoff = (datetime.now(timezone.utc)
+                          - timedelta(days=int(days))).isoformat()
+            except ValueError:
+                cutoff = None
+        visits = db.list_ad_visits()
+        tracking_ok = visits is not None
+        visits = visits or []
+        orders = db.get_orders(limit=100000)
+
+        def _in(r):
+            return cutoff is None or str(r.get("created_at") or "") >= cutoff
+
+        vcount = {}
+        for v in visits:
+            if _in(v):
+                s = (v.get("source") or "direct")
+                vcount[s] = vcount.get(s, 0) + 1
+        ocount = {}
+        for o in orders:
+            if not _in(o):
+                continue
+            s = (o.get("ad_source") or "").strip()
+            key = s if s else "__direct__"
+            e = ocount.setdefault(key, {"orders": 0, "sales": 0.0})
+            e["orders"] += 1
+            e["sales"] += float(o.get("total") or 0)
+
+        def _row(name, v, o, direct=False):
+            return {"name": name, "visitors": v, "orders": o["orders"],
+                    "sales": o["sales"], "direct": direct,
+                    "conv": round(100.0 * o["orders"] / v, 1) if v else None}
+
+        rows = []
+        for k in set(vcount) | set(ocount):
+            if k in ("__direct__", "direct"):
+                continue
+            rows.append(_row(k, vcount.get(k, 0),
+                             ocount.get(k, {"orders": 0, "sales": 0.0})))
+        rows.sort(key=lambda r: (-r["orders"], -r["visitors"]))
+        rows.append(_row("Direct / No Ad", vcount.get("direct", 0),
+                         ocount.get("__direct__", {"orders": 0, "sales": 0.0}),
+                         direct=True))
+        totals = {"visitors": sum(r["visitors"] for r in rows),
+                  "orders": sum(r["orders"] for r in rows),
+                  "sales": sum(r["sales"] for r in rows)}
+        return render_template("admin/ads_report.html", rows=rows,
+                               totals=totals, tracking_ok=tracking_ok, days=days)
+
     # ---- settings ----
     @app.route("/admin/settings", methods=["GET", "POST"])
     @admin_required
@@ -1483,6 +1606,7 @@ def create_app():
             ndays = (request.form.get("new_badge_days") or "").strip()
             wa = (request.form.get("whatsapp_number") or "").strip()
             fb = (request.form.get("facebook_url") or "").strip()
+            px = re.sub(r"\D", "", request.form.get("meta_pixel_id") or "")
             cod = (request.form.get("cod_fee_pct") or "").strip()
             try:
                 float(dfee); float(ffree); int(ndays); float(cod)
@@ -1497,6 +1621,7 @@ def create_app():
                 db.set_setting("new_badge_days", ndays)
                 db.set_setting("whatsapp_number", wa)
                 db.set_setting("facebook_url", fb)
+                db.set_setting("meta_pixel_id", px)
                 db.set_setting("cod_fee_pct", cod)
                 flash("✅ Settings saved!", "success")
             except Exception as e:
@@ -1509,6 +1634,7 @@ def create_app():
             new_badge_days=setting("new_badge_days", "7"),
             whatsapp_number=setting("whatsapp_number", ""),
             facebook_url=setting("facebook_url", ""),
+            meta_pixel_id=setting("meta_pixel_id", ""),
             cod_fee_pct=setting("cod_fee_pct", "4"),
         )
 
