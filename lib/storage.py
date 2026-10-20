@@ -90,10 +90,13 @@ def get_slip_url(path: str, expires_in: int = 3600) -> str:
         return getattr(res, "signed_url", "") or ""
     except Exception:
         return ""
+
+
+def delete_by_url(url):
     """Best-effort delete of a storage object given its public URL."""
     try:
         sb = client()
-        if sb is None:
+        if sb is None or not url:
             return
         for bucket in (IMAGE_BUCKET, VIDEO_BUCKET):
             marker = f"/{bucket}/"
